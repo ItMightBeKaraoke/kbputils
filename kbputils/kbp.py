@@ -271,7 +271,7 @@ class KBPStyleCollection(dict):
     # Hopefully the checks in the next several methods will be enough to keep bad data out...
     @validators.validated_types
     @staticmethod
-    def __assert_valid_item(key: int, value: KBPStyle.orig_class): #TODO: get away from this hackery
+    def __assert_valid_item(key: int, value: KBPStyle):
         if not (1 <= key <= 26 or -26 <= key <= -1):
             raise KeyError(f"Invalid index for item in KBPStyleCollection: {key}")
 

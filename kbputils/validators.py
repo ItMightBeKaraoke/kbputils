@@ -89,10 +89,11 @@ def validated_structures(assert_function, static=False):
     return validate_structures_decorator
 
 # Class decorator to validate type annotations during creation of an instance,
-# intended for immutable types only, because it hands back the base class as soon
-# as it is instantiated
+# intended for immutable types only, because it does not impact any of the
+# methods/attributes
 def validated_instantiation(cls):
-    def validator__new__(c, *args, **kwargs):
+    orig_new = cls.__new__
+    def validator_new(c, *args, **kwargs):
         pos_idx = 0
         for param in (a := inspect.get_annotations(cls)):
             comp = None
@@ -105,6 +106,7 @@ def validated_instantiation(cls):
                 continue
             if not isinstance(comp, (t := a[param])):
                 raise TypeError(f"{cls.__qualname__} expected {param} to be of type {t.__name__}, found {type(comp).__name__}.")
-        return cls(*args, **kwargs)
-    return type(cls.__name__, (cls,), {"__new__": validator__new__, "orig_class": cls})
+        return orig_new(c, *args, **kwargs)
+    cls.__new__ = validator_new
+    return cls
 
