@@ -1,9 +1,28 @@
 import ass
 import dataclasses
 import datetime
+import enum
+import types
+import collections
 from . import kbp
 from . import validators
 from . import kbs
+
+class AssAlignment(enum.Enum):
+    BOTTOM_LEFT = 1
+    BOTTOM_CENTER = 2
+    BOTTOM_RIGHT = 3
+    MIDDLE_LEFT = 4
+    MIDDLE_CENTER = 5
+    MIDDLE_RIGHT = 6
+    TOP_LEFT = 7
+    TOP_CENTER = 8
+    TOP_RIGHT = 9
+
+class AssAspectHandling(enum.Enum):
+    UNDEFINED = enum.auto()
+    LETTERBOX = enum.auto()
+    EXPAND = enum.auto()
 
 @validators.validated_instantiation(replace="__init__")
 @dataclasses.dataclass
@@ -11,9 +30,12 @@ class AssOptions:
     #position: bool
     #wipe: bool
     #border: bool
-    #width: int
     #display: int
     # remove: int
+    target_x: int = 300
+    target_y: int = 216
+    aspect_handling: AssAspectHandling = AssAspectHandling.UNDEFINED # TODO handle scaling and aspect ratio stuff
+    alignment: AssAlignment = AssAlignment.MIDDLE_CENTER
     fade_in: int = 300
     fade_out: int = 200
     transparency: bool = True
@@ -42,7 +64,7 @@ class AssOptions:
             setattr(self, opt, options[opt])
 
 # Not sure why dataclasses doesn't define something like this keyed by field name
-AssOptions._fields = dict((f.name,f) for f in dataclasses.fields(AssOptions))
+AssOptions._fields = types.MappingProxyType(dict((f.name,f) for f in dataclasses.fields(AssOptions)))
 
 class AssConverter:
     
@@ -58,17 +80,40 @@ class AssConverter:
     def get_pos(self, line: kbp.KBPLine, num: int):
         margins = self.kbpFile.margins
         y = margins["top"] + num * (self.kbpFile.margins["spacing"] + 19) + 12 # TODO border setting
-        if line.align == 'C': # TODO: base each style's default on first line, last line, or most common
-            result = r"{\pos(%d,%d)}" % (150, y)
-        elif line.align == 'L':
-            result = r"{\an7\pos(%d,%d)}" % (margins["left"] + 6, y) # TODO border setting
+
+        if line.align == self.style_alignments[line.style]:
+            result = r"{"
+        else:
+            result = r"{\an%d" % AssConverter.kbp2assalign(line.align)
+
+        if line.align == 'L':
+            result += r"\pos(%d,%d)}" % (margins["left"] + 6, y) # TODO border setting
+        elif line.align == 'C':
+            result += r"\pos(%d,%d)}" % (150, y)
         else: #line.align == 'R' or the file is broken
-            result = r"{\an9\pos(%d,%d)}" % (300 - margins["right"] - 6, y) # TODO border setting
+            result += r"\pos(%d,%d)}" % (300 - margins["right"] - 6, y) # TODO border setting
+
         return result
+
+    # Determine the most-used line alignment for each style to minimize \anX tags in result
+    # (since alignment is not part of the KBP style, but is part of the ASS style)
+    def _calc_style_alignments(self):
+        # dict of alpha-keyed style to dict of alignment to frequency
+        # E.g.
+        # { 'A' : {'C': 5, 'L': 2}}
+        # would indicate style A was centered 5 times and left-aligned twice
+        freqs = collections.defaultdict(lambda: collections.defaultdict(lambda: 0))
+        for page in self.kbpFile.pages:
+            for line in page.lines:
+                freqs[line.style][line.align] += 1
+        self.style_alignments = {}
+        for style in freqs:
+            self.style_alignments[style] = max(freqs[style], key = freqs[style].get)
 
     def fade(self):
         return r"{\fad(%d,%d)}" % (self.options.fade_in, self.options.fade_out)
 
+    # Convert a line of syllables into the text of a dialogue event including wipe tags
     def kbp2asstext(self, line: kbp.KBPLine, num: int):
         result = self.get_pos(line, num) + self.fade()
         cur = line.start
@@ -110,6 +155,18 @@ class AssConverter:
             kbpcolor = palette[kbpcolor]
         return alpha + "".join(x+x for x in reversed(list(kbpcolor)))
 
+    @validators.validated_types
+    @staticmethod
+    def kbp2assalign(align: str) -> int:
+        if align == 'L':
+            return AssAlignment.TOP_LEFT.value
+        elif align == 'C':
+            return AssAlignment.TOP_CENTER.value
+        elif align == 'R':
+            return AssAlignment.TOP_RIGHT.value
+        else:
+            raise TypeError("Alignment should be one of ('L', 'C', 'R')")
+
     def ass_document(self):
         result = ass.Document()
         result.info.update(
@@ -118,8 +175,8 @@ class AssConverter:
             WrapStyle=0,
             ScaledBorderAndShadow="yes",
             Collisions="Normal",
-            PlayResX=300,
-            PlayResY=216,
+            PlayResX=self.options.target_x,
+            PlayResY=self.options.target_y,
             ) 
 
         if self.options.offset is False:
@@ -129,6 +186,7 @@ class AssConverter:
         # else already resolved to an int
 
         styles = self.kbpFile.styles
+        self._calc_style_alignments()
         for page in self.kbpFile.pages:
             for num, line in enumerate(page.lines):
                 if line.isempty():
@@ -161,7 +219,7 @@ class AssConverter:
                 margin_r = 0,
                 margin_v = 0,
                 encoding = style.charset,
-                alignment=8, # TODO: apply based on usage
+                alignment=AssConverter.kbp2assalign(self.style_alignments.get(kbp.KBPStyleCollection.key2alpha(idx), 'C')),
                 ))
             
         return result
