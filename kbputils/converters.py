@@ -1,11 +1,11 @@
 import ass
-from dataclasses import dataclass
+import dataclasses
 import datetime
 from . import kbp
 from . import validators
 
-@validators.validated_instantiation
-@dataclass
+@validators.validated_instantiation(replace="__init__")
+@dataclasses.dataclass
 class AssOptions:
     #position: bool
     #wipe: bool
@@ -18,12 +18,41 @@ class AssOptions:
     transparency: bool = True
     offset: int | bool = True
 
+    @validators.validated_types
+    @staticmethod
+    def __assert_valid(key: str, value):
+        if key in AssOptions._fields:
+            if not isinstance(value, (t := AssOptions._fields[key].type)):
+                if callable(t):
+                    value = t(value)
+                # Also try the first type in a union
+                elif hasattr(t, '__args__') and callable(s := t.__args__[0]):
+                    value = s(value)
+            elif not isinstance(value, t):
+                raise TypeError(f"Expected {opt} to be of type {t}. Found {type(options[opt])}.")
+        else:
+            raise TypeError(f"Unexpected field '{key}'. Possible fields are {self._fields.keys()}.")
+
+        return value
+
+    @validators.validated_structures(assert_function=__assert_valid)
+    def update(self, **options):
+        for opt in options:
+            setattr(self, opt, options[opt])
+
+# Not sure why dataclasses doesn't define something like this keyed by field name
+AssOptions._fields = dict((f.name,f) for f in dataclasses.fields(AssOptions))
+
 class AssConverter:
     
     @validators.validated_types
-    def __init__(self, kbpFile: kbp.KBPFile, options: AssOptions = None):
+    def __init__(self, kbpFile: kbp.KBPFile, options: AssOptions = None, **kwargs):
         self.kbpFile = kbpFile
         self.options = options or AssOptions()
+        self.options.update(kwargs)
+
+    def __getattr__(self,attr):
+        return getattr(self.options, attr)
 
     def get_pos(self, line: kbp.KBPLine, num: int):
         margins = self.kbpFile.margins

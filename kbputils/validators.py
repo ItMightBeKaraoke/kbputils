@@ -38,36 +38,55 @@ def one_arg(func=None, /, **kwargs):
         return num_arg(1, **kwargs)
 
 # Decorator for checking type signature on a function including return value if annotated
-def validated_types(func):
-    signature = inspect.signature(func)
+# If coerce_types is set to True, the wrapper will attempt to cast the value to
+# the expected type if it doesn't match and send the result to the decorated
+# function
+def validated_types(func=None, /, *, coerce_types=True):
+    def validated_types_generator(func):
+        signature = inspect.signature(func)
 
-    @functools.wraps(func)
-    def validate_wrapper(*args, **kwargs):
-        pos_idx = 0
-        for param in signature.parameters:
-            comp = None
-            if len(args) > pos_idx:
-                comp = args[pos_idx]
-                pos_idx += 1
-            elif param in kwargs:
-                comp = kwargs[param]
-            else:
-                # parameter not passed, nothing to validate
-                # function itself should validate number of parameters and
-                # whether they were option or mandatory
-                continue 
-            if (t := signature.parameters[param].annotation) is not inspect._empty and not isinstance(comp, t):
-                raise TypeError(f"{func.__qualname__} expected {param} to be of type {t.__name__}, found {type(comp).__name__}.")
-        result = func(*args, **kwargs)
-        if (t := signature.return_annotation) is not inspect._empty and not isinstance(result, t):
-            raise TypeError(f"{func.__qualname__} was expected to return type {t.__name__}, found {type(result).__name__}.")
-        return result
-    return validate_wrapper
+        @functools.wraps(func)
+        def validate_wrapper(*args, **kwargs):
+            pos_idx = 0
+            for param in signature.parameters:
+                comp = None
+                setter = None
+                if len(args) > pos_idx:
+                    comp = args[pos_idx]
+                    if coerce_types:
+                        setter = (lambda idx: lambda val: args.__setitem__(idx, val))(pos_idx)
+                    pos_idx += 1
+                elif param in kwargs:
+                    comp = kwargs[param]
+                    if coerce_types:
+                        setter = lambda val: kwargs.__setitem__(param, val)
+                else:
+                    # parameter not passed, nothing to validate
+                    # function itself should validate number of parameters and
+                    # whether they were option or mandatory
+                    continue 
+                if (t := signature.parameters[param].annotation) is not inspect._empty:
+                    if coerce_types and not isinstance(comp, t) and callable(t):
+                        # Give coercion a try...
+                        setter(t(comp))
+                    elif not isinstance(comp, t):
+                        raise TypeError(f"{func.__qualname__} expected {param} to be of type {t.__name__}, found {type(comp).__name__}.")
+            result = func(*args, **kwargs)
+            if (t := signature.return_annotation) is not inspect._empty and not isinstance(result, t):
+                raise TypeError(f"{func.__qualname__} was expected to return type {t.__name__}, found {type(result).__name__}.")
+            return result
+        return validate_wrapper
+    if func:
+        return validated_types_generator(func)
+    else:
+        return validated_types_generator
 
 # Function decorator for checking an assertion across key/value data sent as a
 # single object parameter or provided in kwargs. Ignores the first argument,
-# assuming it to be self unless static is set to True
+# assuming it to be self (or the class) unless static is set to True
 # The assert_function passed should take key and value arguments and validate both
+# If the assert_function returns a value, it replaces the value passed to the
+# decorated function (so types can be coerced instead of just strictly checked)
 def validated_structures(assert_function, static=False):
     def validate_structures_decorator(func):
         @functools.wraps(func)
@@ -79,34 +98,46 @@ def validated_structures(assert_function, static=False):
             if(hasattr(arg,"keys")):
                 to_check.append(arg)
             else:
+                new_arg = []
                 for key,val in arg:
-                    assert_function(key, val)
+                    res = assert_function(key, val)
+                    if res is not None:
+                        new_arg.append((key,res))
+                    else:
+                        new_arg.append((key,val))
+                    args = (args[0], new_arg, *args[2:])
             for x in to_check:
                 for key in x.keys():
-                    assert_function(key, x[key])
+                    res = assert_function(key, x[key])
+                    if res is not None:
+                        x[key] = res
             return func(*args, **kwargs)
         return validate_structures_wrapper
     return validate_structures_decorator
 
 # Class decorator to validate type annotations during creation of an instance,
-# intended for immutable types only, because it does not impact any of the
-# methods/attributes
-def validated_instantiation(cls):
-    orig_new = cls.__new__
-    def validator_new(c, *args, **kwargs):
-        pos_idx = 0
-        for param in (a := inspect.get_annotations(cls)):
-            comp = None
-            if(len(args) > pos_idx):
-                comp = args[pos_idx]
-                pos_idx += 1
-            elif param in kwargs:
-                comp = kwargs[param]
-            else:
-                continue
-            if not isinstance(comp, (t := a[param])):
-                raise TypeError(f"{cls.__qualname__} expected {param} to be of type {t.__name__}, found {type(comp).__name__}.")
-        return orig_new(c, *args, **kwargs)
-    cls.__new__ = validator_new
-    return cls
-
+# Note that any methods/attributes with type requirements need to be validated
+# separately
+def validated_instantiation(cls=None, /, *, replace="__new__"):
+    def validated_instantiation_generator(cls):
+        orig_func = getattr(cls, replace)
+        def validator_func(c, *args, **kwargs):
+            pos_idx = 0
+            for param in (a := inspect.get_annotations(cls)):
+                comp = None
+                if(len(args) > pos_idx):
+                    comp = args[pos_idx]
+                    pos_idx += 1
+                elif param in kwargs:
+                    comp = kwargs[param]
+                else:
+                    continue
+                if not isinstance(comp, (t := a[param])):
+                    raise TypeError(f"{cls.__qualname__} expected {param} to be of type {t.__name__}, found {type(comp).__name__}.")
+            return orig_func(c, *args, **kwargs)
+        setattr(cls, replace, validator_func)
+        return cls
+    if cls:
+        return validated_instantiation_generator(cls)
+    else:
+        return validated_instantiation_generator

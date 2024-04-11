@@ -168,6 +168,11 @@ class KBPLine(typing.NamedTuple):
     def __getattr__(self, attr):
         return getattr(self.header, attr)
 
+    # These will just return "can't set" errors since it's immutable, but that
+    # makes more sense than "has no attribute"
+    def __setattr__(self, attr, val):
+        return setattr(self.header, attr, val)
+
     def text(self, syllable_separator="", space_is_separator=False):
 
         # Special case for empty lines because when importing lyrics into KBS,
