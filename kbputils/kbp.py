@@ -8,14 +8,13 @@ class KBPFile:
 
     DIVIDER = "-----------------------------"
 
-    def __init__(self, kbpFile, options={}):
-        self.options = options
+    def __init__(self, kbpFile, **kwargs):
         self.pages = []
         self.images = []
         with open(kbpFile, "r") as f:
-            self.parse([x.rstrip() for x in f.readlines()])
+            self.parse([x.rstrip() for x in f.readlines()], **kwargs)
 
-    def parse(self, kbpLines, resolve_colors=True, resolve_wipe=True):
+    def parse(self, kbpLines, resolve_colors=False, resolve_wipe=True):
         in_header = False
         divider = False
         for x, line in enumerate(kbpLines):
@@ -24,7 +23,8 @@ class KBPFile:
                     self.colors = KBPPalette.from_string(kbpLines[x+1])
                 elif line.startswith("'Styles"):
                     data = kbpLines[x+1:kbpLines.index("  StyleEnd", x+1)]
-                    self.styles = KBPStyleCollection.from_textlines([x for x in data if not x.startswith("'")], palette=self.colors)
+                    opts = {"palette": self.colors} if resolve_colors else {}
+                    self.styles = KBPStyleCollection.from_textlines([x for x in data if not x.startswith("'")], **opts)
                 elif line.startswith("'Margins"):
                     self.parse_margins(kbpLines[x+1])
                 elif line.startswith("'Other"):

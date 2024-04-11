@@ -3,6 +3,7 @@ import dataclasses
 import datetime
 from . import kbp
 from . import validators
+from . import kbs
 
 @validators.validated_instantiation(replace="__init__")
 @dataclasses.dataclass
@@ -16,7 +17,7 @@ class AssOptions:
     fade_in: int = 300
     fade_out: int = 200
     transparency: bool = True
-    offset: int | bool = True
+    offset: int | bool = True # False = disable offset (same as 0), True = pull from KBS config, int is offset in ms
 
     @validators.validated_types
     @staticmethod
@@ -49,7 +50,7 @@ class AssConverter:
     def __init__(self, kbpFile: kbp.KBPFile, options: AssOptions = None, **kwargs):
         self.kbpFile = kbpFile
         self.options = options or AssOptions()
-        self.options.update(kwargs)
+        self.options.update(**kwargs)
 
     def __getattr__(self,attr):
         return getattr(self.options, attr)
@@ -98,8 +99,14 @@ class AssConverter:
         return f"Style{abs(index):02}_{kbpName}"
 
     @staticmethod
-    def kbp2asscolor(kbpcolor: str):
-        return "&H00" + "".join(x+x for x in reversed(list(kbpcolor)))
+    def kbp2asscolor(kbpcolor: int | str, palette: kbp.KBPPalette = None, transparency: bool = False):
+        alpha = "&H00"
+        if isinstance(kbpcolor, int):
+            if transparency and kbpcolor == 0:
+                alpha = "&HFF"
+            # This will intentionally raise an exception if colors are unresolved and palette is not provided
+            kbpcolor = palette[kbpcolor]
+        return alpha + "".join(x+x for x in reversed(list(kbpcolor)))
 
     def ass_document(self):
         result = ass.Document()
@@ -112,14 +119,21 @@ class AssConverter:
             PlayResX=300,
             PlayResY=216,
             ) 
+
+        if self.options.offset is False:
+            self.options.offset = 0
+        elif self.options.offset is True:
+            self.options.offset = kbs.offset * 10
+        # else already resolved to an int
+
         styles = self.kbpFile.styles
         for page in self.kbpFile.pages:
             for num, line in enumerate(page.lines):
                 if line.isempty():
                     continue
                 result.events.append(ass.Dialogue(
-                    start=datetime.timedelta(milliseconds = line.start * 10),
-                    end=datetime.timedelta(milliseconds = line.end * 10),
+                    start=datetime.timedelta(milliseconds = line.start * 10 + self.options.offset),
+                    end=datetime.timedelta(milliseconds = line.end * 10 + self.options.offset),
                     style=AssConverter.ass_style_name(kbp.KBPStyleCollection.alpha2key(line.style), styles[line.style].name),
                     effect="karaoke",
                     text=line.text() if styles[line.style].fixed else self.kbp2asstext(line, num),
@@ -130,10 +144,11 @@ class AssConverter:
                 name=AssConverter.ass_style_name(idx, style.name),
                 fontname=style.fontname,
                 fontsize=style.fontsize * 1.4,  # TODO do better
-                secondary_color=AssConverter.kbp2asscolor(style.textcolor),
-                primary_color=AssConverter.kbp2asscolor(style.textwipecolor),
-                outline_color=AssConverter.kbp2asscolor(style.outlinecolor),
-                back_color=AssConverter.kbp2asscolor(style.outlinewipecolor), # NOTE: no outline wipe in .ass
+                secondary_color=AssConverter.kbp2asscolor(style.textcolor, palette=self.kbpFile.colors, transparency=self.options.transparency),
+                primary_color=AssConverter.kbp2asscolor(style.textwipecolor, palette=self.kbpFile.colors, transparency=self.options.transparency),
+                outline_color=AssConverter.kbp2asscolor(style.outlinecolor, palette=self.kbpFile.colors, transparency=self.options.transparency),
+                # NOTE: no outline wipe in .ass
+                back_color=AssConverter.kbp2asscolor(style.outlinewipecolor, palette=self.kbpFile.colors, transparency=self.options.transparency),
                 bold = 'B' in style.fontstyle,
                 italic = 'I' in style.fontstyle,
                 underline = 'U' in style.fontstyle,
