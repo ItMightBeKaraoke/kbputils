@@ -79,7 +79,7 @@ class AssConverter:
 
     def get_pos(self, line: kbp.KBPLine, num: int):
         margins = self.kbpFile.margins
-        y = margins["top"] + num * (self.kbpFile.margins["spacing"] + 19) + 12 # TODO border setting
+        y = margins["top"] + line.down + num * (self.kbpFile.margins["spacing"] + 19) + 12 # TODO border setting
 
         if line.align == self.style_alignments[line.style]:
             result = r"{"
@@ -87,11 +87,11 @@ class AssConverter:
             result = r"{\an%d" % AssConverter.kbp2assalign(line.align)
 
         if line.align == 'L':
-            result += r"\pos(%d,%d)}" % (margins["left"] + 6, y) # TODO border setting
+            result += r"\pos(%d,%d)}" % (margins["left"] + 6 + line.right, y) # TODO border setting
         elif line.align == 'C':
-            result += r"\pos(%d,%d)}" % (150, y)
+            result += r"\pos(%d,%d)}" % (150 + line.right, y)
         else: #line.align == 'R' or the file is broken
-            result += r"\pos(%d,%d)}" % (300 - margins["right"] - 6, y) # TODO border setting
+            result += r"\pos(%d,%d)}" % (300 - margins["right"] - 6 + line.right, y) # TODO border setting
 
         return result
 
