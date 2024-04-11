@@ -90,7 +90,9 @@ class AssConverter:
             if len(line.syllables) > n+1 and line.syllables[n+1].start - s.end == 1:
                 dur += 1
 
-            result += r"{\kf%d}%s" % (dur, s.syllable) # TODO: wipe style
+            wipe = "\kf" if s.wipe < 5 else "\k"
+
+            result += r"{%s%d}%s" % (wipe, dur, s.syllable)
             cur = s.start + dur
         return result
 
