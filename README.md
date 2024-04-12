@@ -13,6 +13,6 @@ converters module which currently contains a basic converter to the .ass format:
 
     converter = kbputils.converters.AssConverter(k) # A few options are available, but not many yet
     doc = converter.ass_document()  # generate an ass.Document from the ass module
-    with open("outputfile.ass", "w") as f:
+    with open("outputfile.ass", "w", encoding='utf_8_sig') as f:
         doc.dump_file(f)
 
