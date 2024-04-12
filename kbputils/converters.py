@@ -16,8 +16,41 @@ class AssAlignment(enum.Enum):
     MIDDLE_CENTER = 5
     MIDDLE_RIGHT = 6
     TOP_LEFT = 7
+    L = 7 # Alias
     TOP_CENTER = 8
+    C = 8 # Alias
     TOP_RIGHT = 9
+    R = 9 # Alias
+    
+    def x(self):
+        if self.value % 3 == 1:
+            return Ass1DAlignment.LEFT
+        elif self.value % 3 == 2:
+            return Ass1DAlignment.CENTER
+        else:
+            return Ass1DAlignment.RIGHT
+
+    def y(self):
+        if 1 <= self.value <= 3:
+            return Ass1DAlignment.BOTTOM
+        elif 4 <= self.value <= 6:
+            return Ass1DAlignment.MIDDLE
+        else:
+            return Ass1DAlignment.TOP
+
+class Ass1DAlignment(enum.Enum):
+    LEFT = enum.auto()
+    CENTER = enum.auto()
+    RIGHT = enum.auto()
+    TOP = enum.auto()
+    MIDDLE = enum.auto()
+    BOTTOM = enum.auto()
+
+    # Direction to move to apply letterbox margin
+    def translation(self):
+        if self is Ass1DAlignment.RIGHT or self is Ass1DAlignment.BOTTOM:
+            return -1
+        return 1
 
 class AssAspectHandling(enum.Enum):
     UNDEFINED = enum.auto()
@@ -77,6 +110,21 @@ class AssConverter:
     def __getattr__(self,attr):
         return getattr(self.options, attr)
 
+    # Move coordinates based on scaling the canvas size
+    # If AssAspectHandling is EXPAND:
+    #   If the target aspect ratio is wider than 300:216 x coordinates are
+    #   scaled to match, otherwise y are
+    # If AssAspectHandling is LETTERBOX:
+    #  - coordinates are scaled keeping aspect until one of target_x, target_y is reached
+    #  - The relevant dimension of alignment is used to transpose the coordinates, moving by
+    #    margin toward the center (or down/right if the alignment is middle/center)
+    # If AssAspectHandling is UNDEFINED:
+    #   No scaling, target_x, target_y must be 300, 216, otherwise raises an exception
+    @validators.validated_types
+    @staticmethod
+    def rescale_coords(x: int, y: int, target_x: int, target_y: int, method: AssAspectHandling, alignment: AssAlignment = AssAlignment.MIDDLE_CENTER, margin: int = 0):
+        pass #TODO
+
     def get_pos(self, line: kbp.KBPLine, num: int):
         margins = self.kbpFile.margins
         y = margins["top"] + line.down + num * (self.kbpFile.margins["spacing"] + 19) + 12 # TODO border setting
@@ -84,16 +132,16 @@ class AssConverter:
         if line.align == self.style_alignments[line.style]:
             result = r"{"
         else:
-            result = r"{\an%d" % AssConverter.kbp2assalign(line.align)
+            result = r"{\an%d" % AssAlignment[line.align]
 
         if line.align == 'L':
-            result += r"\pos(%d,%d)}" % (margins["left"] + 6 + line.right, y) # TODO border setting
+            x = margins["left"] + 6 + line.right # TODO border setting
         elif line.align == 'C':
-            result += r"\pos(%d,%d)}" % (150 + line.right, y)
+            x = 150 + line.right
         else: #line.align == 'R' or the file is broken
-            result += r"\pos(%d,%d)}" % (300 - margins["right"] - 6 + line.right, y) # TODO border setting
+            x = 300 - margins["right"] - 6 + line.right # TODO border setting
 
-        return result
+        return result + r"\pos(%d,%d)}" % (x, y)
 
     # Determine the most-used line alignment for each style to minimize \anX tags in result
     # (since alignment is not part of the KBP style, but is part of the ASS style)
@@ -155,18 +203,6 @@ class AssConverter:
             kbpcolor = palette[kbpcolor]
         return alpha + "".join(x+x for x in reversed(list(kbpcolor)))
 
-    @validators.validated_types
-    @staticmethod
-    def kbp2assalign(align: str) -> int:
-        if align == 'L':
-            return AssAlignment.TOP_LEFT.value
-        elif align == 'C':
-            return AssAlignment.TOP_CENTER.value
-        elif align == 'R':
-            return AssAlignment.TOP_RIGHT.value
-        else:
-            raise TypeError("Alignment should be one of ('L', 'C', 'R')")
-
     def ass_document(self):
         result = ass.Document()
         result.info.update(
@@ -219,7 +255,7 @@ class AssConverter:
                 margin_r = 0,
                 margin_v = 0,
                 encoding = style.charset,
-                alignment=AssConverter.kbp2assalign(self.style_alignments.get(kbp.KBPStyleCollection.key2alpha(idx), 'C')),
+                alignment=AssAlignment[self.style_alignments.get(kbp.KBPStyleCollection.key2alpha(idx), 'C')],
                 ))
             
         return result
