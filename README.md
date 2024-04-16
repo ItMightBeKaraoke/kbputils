@@ -18,7 +18,7 @@ converters module which currently contains a basic converter to the .ass format:
 
 There's also a CLI for it (command and syntax subject to change):
 
-    $ python -m kbputils --help
+    $ KBPUtils --help
     usage: KBPUtils [-h] [--border | --no-border] [--float-font | --no-float-font] [--float-pos | --no-float-pos] [--target-x TARGET_X]
                     [--target-y TARGET_Y] [--fade-in FADE_IN] [--fade-out FADE_OUT] [--transparency | --no-transparency] [--offset OFFSET]
                     source_file [dest_file]
