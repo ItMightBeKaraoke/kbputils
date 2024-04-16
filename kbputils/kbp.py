@@ -2,6 +2,7 @@ import collections
 import re
 import string
 import typing
+import io
 from . import validators
 
 class KBPFile:
@@ -11,8 +12,13 @@ class KBPFile:
     def __init__(self, kbpFile, **kwargs):
         self.pages = []
         self.images = []
-        with open(kbpFile, "r", encoding="utf-8") as f:
-            self.parse([x.rstrip() for x in f.readlines()], **kwargs)
+        needsclosed = False
+        if not isinstance(kbpFile, io.IOBase):
+            kbpFile = open(kbpFile, "r", encoding="utf-8")
+            needsclosed = True
+        self.parse([x.rstrip() for x in kbpFile.readlines()], **kwargs)
+        if needsclosed:
+            kbpFile.close()
 
     def parse(self, kbpLines, resolve_colors=False, resolve_wipe=True):
         in_header = False

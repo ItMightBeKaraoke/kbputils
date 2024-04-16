@@ -3,6 +3,7 @@ from . import converters
 import argparse
 import dataclasses
 import io
+import sys
 
 def convert_file():
     parser = argparse.ArgumentParser(prog='KBPUtils', description="Convert .kbp to .ass file", argument_default=argparse.SUPPRESS)
@@ -20,7 +21,7 @@ def convert_file():
     parser.add_argument("dest_file", nargs='?')
     args = parser.parse_args()
     source = args.source_file
-    k = kbp.KBPFile(source)
+    k = kbp.KBPFile(sys.stdin if source == "-" else source)
     dest = open(args.dest_file, 'w', encoding='utf_8_sig') if hasattr(args, 'dest_file') else io.StringIO()
     del args.source_file
     if hasattr(args, 'dest_file'):
