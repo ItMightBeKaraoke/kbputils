@@ -1,6 +1,6 @@
 [project]
 name = "kbputils"
-version = "0.0.2"
+version = "0.0.3"
 authors = [
   { name="Matt M", email="code@itmightbekaraoke.com" },
 ]
