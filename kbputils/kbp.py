@@ -11,7 +11,7 @@ class KBPFile:
     def __init__(self, kbpFile, **kwargs):
         self.pages = []
         self.images = []
-        with open(kbpFile, "r") as f:
+        with open(kbpFile, "r", encoding="utf-8") as f:
             self.parse([x.rstrip() for x in f.readlines()], **kwargs)
 
     def parse(self, kbpLines, resolve_colors=False, resolve_wipe=True):
