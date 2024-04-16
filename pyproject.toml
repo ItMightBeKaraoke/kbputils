@@ -5,6 +5,7 @@ dependencies = [
     "ass"
 ]
 [project.scripts]
+KBPUtils = "kbputils.cli:convert_file"
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"

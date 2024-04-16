@@ -16,3 +16,32 @@ converters module which currently contains a basic converter to the .ass format:
     with open("outputfile.ass", "w", encoding='utf_8_sig') as f:
         doc.dump_file(f)
 
+There's also a CLI for it (command and syntax subject to change):
+
+    $ python -m kbputils --help
+    usage: KBPUtils [-h] [--border | --no-border] [--float-font | --no-float-font] [--float-pos | --no-float-pos] [--target-x TARGET_X]
+                    [--target-y TARGET_Y] [--fade-in FADE_IN] [--fade-out FADE_OUT] [--transparency | --no-transparency] [--offset OFFSET]
+                    source_file [dest_file]
+    
+    Convert .kbp to .ass file
+    
+    positional arguments:
+      source_file
+      dest_file
+    
+    options:
+      -h, --help            show this help message and exit
+      --border, --no-border
+                            bool (default: True)
+      --float-font, --no-float-font
+                            bool (default: True)
+      --float-pos, --no-float-pos
+                            bool (default: False)
+      --target-x TARGET_X   int (default: 300)
+      --target-y TARGET_Y   int (default: 216)
+      --fade-in FADE_IN     int (default: 300)
+      --fade-out FADE_OUT   int (default: 200)
+      --transparency, --no-transparency
+                            bool (default: True)
+      --offset OFFSET       int | bool (default: True)
+    
