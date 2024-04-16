@@ -47,6 +47,9 @@ def validated_types(func=None, /, *, coerce_types=True):
 
         @functools.wraps(func)
         def validate_wrapper(*args, **kwargs):
+            # Need something mutable if items need to be modified
+            if coerce_types:
+                args = list(args)
             pos_idx = 0
             for param in signature.parameters:
                 comp = None

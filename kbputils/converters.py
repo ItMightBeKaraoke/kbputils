@@ -22,54 +22,19 @@ class AssAlignment(enum.Enum):
     TOP_RIGHT = 9
     R = 9 # Alias
     
-    def x(self):
-        if self.value % 3 == 1:
-            return Ass1DAlignment.LEFT
-        elif self.value % 3 == 2:
-            return Ass1DAlignment.CENTER
-        else:
-            return Ass1DAlignment.RIGHT
-
-    def y(self):
-        if 1 <= self.value <= 3:
-            return Ass1DAlignment.BOTTOM
-        elif 4 <= self.value <= 6:
-            return Ass1DAlignment.MIDDLE
-        else:
-            return Ass1DAlignment.TOP
-
-class Ass1DAlignment(enum.Enum):
-    LEFT = enum.auto()
-    CENTER = enum.auto()
-    RIGHT = enum.auto()
-    TOP = enum.auto()
-    MIDDLE = enum.auto()
-    BOTTOM = enum.auto()
-
-    # Direction to move to apply letterbox margin
-    def translation(self):
-        if self is Ass1DAlignment.RIGHT or self is Ass1DAlignment.BOTTOM:
-            return -1
-        return 1
-
-class AssAspectHandling(enum.Enum):
-    UNDEFINED = enum.auto()
-    LETTERBOX = enum.auto()
-    EXPAND = enum.auto()
-
 @validators.validated_instantiation(replace="__init__")
 @dataclasses.dataclass
 class AssOptions:
     #position: bool
     #wipe: bool
-    #border: bool
+    border: bool = True # Add CDG-style borders to margins
     #display: int
-    # remove: int
-    target_x: int = 300
+    #remove: int
+    float_font: bool = True # Allow floating point in output font sizes (well-supported)
+    float_pos: bool = False # Allow floating point in \pos coordinates (supported by recent libass)
+    target_x: int = 300 # Output resolution
     target_y: int = 216
-    aspect_handling: AssAspectHandling = AssAspectHandling.UNDEFINED # TODO handle scaling and aspect ratio stuff
-    alignment: AssAlignment = AssAlignment.MIDDLE_CENTER
-    fade_in: int = 300
+    fade_in: int = 300 # Fade duration for line display/remove
     fade_out: int = 200
     transparency: bool = True
     offset: int | bool = True # False = disable offset (same as 0), True = pull from KBS config, int is offset in ms
@@ -104,44 +69,79 @@ class AssConverter:
     @validators.validated_types
     def __init__(self, kbpFile: kbp.KBPFile, options: AssOptions = None, **kwargs):
         self.kbpFile = kbpFile
+        # Allow for applying specific overrides to defaults in kwargs, or
+        # providing a template for defaults then overriding items there
         self.options = options or AssOptions()
         self.options.update(**kwargs)
 
+    # Delegate to options if not present in the object itself
     def __getattr__(self,attr):
         return getattr(self.options, attr)
 
     # Move coordinates based on scaling the canvas size
-    # If AssAspectHandling is EXPAND:
-    #   If the target aspect ratio is wider than 300:216 x coordinates are
-    #   scaled to match, otherwise y are
-    # If AssAspectHandling is LETTERBOX:
-    #  - coordinates are scaled keeping aspect until one of target_x, target_y is reached
-    #  - The relevant dimension of alignment is used to transpose the coordinates, moving by
-    #    margin toward the center (or down/right if the alignment is middle/center)
-    # If AssAspectHandling is UNDEFINED:
-    #   No scaling, target_x, target_y must be 300, 216, otherwise raises an exception
+    # If the target aspect ratio is wider than 300:216, x coordinates are
+    # scaled more than y and vice versa
+    # For example:
+    #  - target_x, target_y = 384, 216
+    #    - this behaves like -W 384 in the javascript kbp2ass
+    #    - Text would not be scaled by scale_font, but this adjusts x positions to expand to fit the space
+    #    - y positions would stay the same
+    #  - target_x, target_y = 600, 600
+    #    - Text would be scaled 2x by scale_font (min(600/300, 600/216))
+    #    - x coordinates would be adjusted for the scaling factor
+    #    - y coordinates would be further adjusted to fit the space
+    #
+    # NOTE: Original plan was to provide a letterboxed version as well, but
+    # unfortunately .ass cannot reliably do that, as the margins are only used
+    # for soft word wrapping. To letterbox, scale to a resolution with aspect
+    # ratio the same as CDG, then letterbox when rendering the video
     @validators.validated_types
     @staticmethod
-    def rescale_coords(x: int, y: int, target_x: int, target_y: int, method: AssAspectHandling, alignment: AssAlignment = AssAlignment.MIDDLE_CENTER, margin: int = 0):
-        pass #TODO
+    def rescale_coords(x: int, y: int, target_x: int, target_y: int, allow_float: bool = False, border: bool = True) -> tuple:
+        cdg_res = (300, 216) if border else (288, 192)
+        res = (x * target_x / cdg_res[0], y * target_y / cdg_res[1])
+        if allow_float:
+            # Still return ints if they happen to be just as accurate
+            return tuple(i if (i := int(r)) == r else r for r in res)
+        else:
+            return tuple(round(coord) for coord in res)
 
+    # Scale scalars like font, border, shadow
+    # These are scaled by a factor of the minimum of the scaling factor of x
+    # and y to avoid going off screen
+    # If font is true, additional scaling factor of 1.4 is applied to account for line height vs cap height
+    @validators.validated_types
+    @staticmethod
+    def rescale_scalar(size: float, target_x: int, target_y: int, allow_float: bool = True, border: bool = True, font: bool = False) -> int | float:
+        cdg_res = (300, 216) if border else (288, 192)
+        scale = min(target_x / cdg_res[0], target_y / cdg_res[1])
+        res = size * scale * (1.4 if font else 1) # Find way to calculate line_height(fontsize) instead of using this constant
+        return res if (allow_float and int(res) != res) else round(res)
+
+    @validators.validated_types(coerce_types = False) # At least don't want to coerce bool since it can convert anything
     def get_pos(self, line: kbp.KBPLine, num: int):
+        cdg_res_x = 300 if self.border else 288
         margins = self.kbpFile.margins
-        y = margins["top"] + line.down + num * (self.kbpFile.margins["spacing"] + 19) + 12 # TODO border setting
+        y = margins["top"] + line.down + num * (self.kbpFile.margins["spacing"] + 19) + (12 if self.border else 0)
 
         if line.align == self.style_alignments[line.style]:
             result = r"{"
         else:
-            result = r"{\an%d" % AssAlignment[line.align]
+            result = r"{\an%d" % AssAlignment[line.align].value
+
+        if line.rotation:
+            result += f"\\frz{line.rotation}"
 
         if line.align == 'L':
-            x = margins["left"] + 6 + line.right # TODO border setting
+            x = margins["left"] + line.right + (6 if self.border else 0)
         elif line.align == 'C':
-            x = 150 + line.right
+            x = cdg_res_x / 2 + line.right
         else: #line.align == 'R' or the file is broken
-            x = 300 - margins["right"] - 6 + line.right # TODO border setting
+            x = cdg_res_x - margins["right"] + line.right - (6 if self.border else 0)
 
-        return result + r"\pos(%d,%d)}" % (x, y)
+        # TODO: Adjust margin for line based on pos for better wrapping behavior?
+        # Yes, %s, so it will stringify either an int or float and display properly
+        return result + r"\pos(%s,%s)}" % AssConverter.rescale_coords(x, y, self.target_x, self.target_y, border=self.border, allow_float=self.float_pos)
 
     # Determine the most-used line alignment for each style to minimize \anX tags in result
     # (since alignment is not part of the KBP style, but is part of the ASS style)
@@ -233,13 +233,14 @@ class AssConverter:
                     style=AssConverter.ass_style_name(kbp.KBPStyleCollection.alpha2key(line.style), styles[line.style].name),
                     effect="karaoke",
                     text=line.text() if styles[line.style].fixed else self.kbp2asstext(line, num),
+                    # TODO: set margins for proper wrapping? Need to be modified for pos
                     ))
         for idx in styles:
             style = styles[idx]
             result.styles.append(ass.Style(
                 name=AssConverter.ass_style_name(idx, style.name),
                 fontname=style.fontname,
-                fontsize=style.fontsize * 1.4,  # TODO do better
+                fontsize=AssConverter.rescale_scalar(style.fontsize, self.target_x, self.target_y, font = True, border=self.border),
                 secondary_color=AssConverter.kbp2asscolor(style.textcolor, palette=self.kbpFile.colors, transparency=self.options.transparency),
                 primary_color=AssConverter.kbp2asscolor(style.textwipecolor, palette=self.kbpFile.colors, transparency=self.options.transparency),
                 outline_color=AssConverter.kbp2asscolor(style.outlinecolor, palette=self.kbpFile.colors, transparency=self.options.transparency),
@@ -249,13 +250,13 @@ class AssConverter:
                 italic = 'I' in style.fontstyle,
                 underline = 'U' in style.fontstyle,
                 strike_out = 'S' in style.fontstyle,
-                outline = sum(style.outlines)/4,   # NOTE: only one outline, but it's a float, so maybe this will be helpful
-                shadow = sum(style.shadows)/2,
-                margin_l = 0,
+                outline = AssConverter.rescale_scalar(sum(style.outlines), self.target_x, self.target_y, border=self.border)/4, # NOTE: only one outline, but it's a float, so maybe averaging will be helpful
+                shadow = AssConverter.rescale_scalar(sum(style.shadows), self.target_x, self.target_y, border=self.border)/2,
+                margin_l = 0, # TODO: determine if these should be set and if page margins and line margins stack
                 margin_r = 0,
                 margin_v = 0,
                 encoding = style.charset,
-                alignment=AssAlignment[self.style_alignments.get(kbp.KBPStyleCollection.key2alpha(idx), 'C')],
+                alignment=AssAlignment[self.style_alignments.get(kbp.KBPStyleCollection.key2alpha(idx), 'C')].value,
                 ))
             
         return result
