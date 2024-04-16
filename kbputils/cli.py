@@ -10,6 +10,7 @@ def convert_file():
         name = field.name.replace("_", "-")
         parser.add_argument(
             f"--{name}",
+            gen_shortopt(name),
             dest = field.name,
             help = (field.type.__name__ if hasattr(field.type, '__name__') else repr(field.type)) + f" (default: {field.default})",
             type = int_or_bool if field.type == int | bool else field.type,
@@ -27,6 +28,18 @@ def convert_file():
     converters.AssConverter(k, **vars(args)).ass_document().dump_file(dest)
     if type(dest) is io.StringIO:
         print(dest.getvalue())
+
+# Auto-generate short option based on field name
+used_shortopts=set("h")
+def gen_shortopt(longopt):
+    # Options with - likely have duplication, so use a letter from after the
+    # last one
+    if len(parts := longopt.split("-")) > 1:
+        return gen_shortopt(parts[-1])
+    for char in longopt:
+        if char not in used_shortopts:
+            used_shortopts.add(char)
+            return f"-{char}"
 
 # Coerce a string value into a bool or int
 # Accept true|false (case-insensitive), otherwise try int
