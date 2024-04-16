@@ -54,6 +54,10 @@ class KBPFile:
             # Ignore empty/comment lines and still consider the previous line to be a divider
             elif line != "" and not line.startswith("'"):
                 divider = False
+
+        missing = ', '.join(filter(lambda x: not hasattr(self, x), ('colors', 'styles', 'margins', 'other','pages', 'trackinfo')))
+        if missing:
+            raise ValueError(f"Invalid KBP file, missing sections: {missing}")
     
 
     def parse_margins(self, margin_line):
