@@ -1,6 +1,11 @@
 [project]
 name = "kbputils"
-version = "0.0.1"
+version = "0.0.2"
+authors = [
+  { name="Matt M", email="code@itmightbekaraoke.com" },
+]
+description = "Utilities to handle .kbp files created with Karaoke Builder Studio."
+readme = "README.md"
 dependencies = [
     "ass"
 ]
