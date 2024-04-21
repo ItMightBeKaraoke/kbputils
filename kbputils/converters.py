@@ -118,8 +118,8 @@ class AssConverter:
         res = size * scale * (1.4 if font else 1) # Find way to calculate line_height(fontsize) instead of using this constant
         return res if (allow_float and int(res) != res) else round(res)
 
-    @validators.validated_types(coerce_types = False) # At least don't want to coerce bool since it can convert anything
-    def get_pos(self, line: kbp.KBPLine, num: int):
+    @validators.validated_types
+    def get_pos(self, line: kbp.KBPLine, num: int) -> str:
         cdg_res_x = 300 if self.border else 288
         margins = self.kbpFile.margins
         y = margins["top"] + line.down + num * (self.kbpFile.margins["spacing"] + 19) + (12 if self.border else 0)
@@ -158,12 +158,16 @@ class AssConverter:
         for style in freqs:
             self.style_alignments[style] = max(freqs[style], key = freqs[style].get)
 
-    def fade(self):
+    @validators.validated_types
+    def fade(self) -> str:
         return r"{\fad(%d,%d)}" % (self.options.fade_in, self.options.fade_out)
 
     # Convert a line of syllables into the text of a dialogue event including wipe tags
+    @validators.validated_types
     def kbp2asstext(self, line: kbp.KBPLine, num: int):
         result = self.get_pos(line, num) + self.fade()
+        if self.kbpFile.styles[line.style].fixed:
+            return result + line.text()
         cur = line.start
         for (n, s) in enumerate(line.syllables):
             delay = s.start - cur
@@ -189,12 +193,14 @@ class AssConverter:
             cur = s.start + dur
         return result
 
+    @validators.validated_types
     @staticmethod
     def ass_style_name(index: int, kbpName: str):
         return f"Style{abs(index):02}_{kbpName}"
 
+    @validators.validated_types(coerce_types=False)
     @staticmethod
-    def kbp2asscolor(kbpcolor: int | str, palette: kbp.KBPPalette = None, transparency: bool = False):
+    def kbp2asscolor(kbpcolor: int | str, palette: kbp.KBPPalette | types.NoneType = None, transparency: bool = False):
         alpha = "&H00"
         if isinstance(kbpcolor, int):
             if transparency and kbpcolor == 0:
@@ -232,7 +238,7 @@ class AssConverter:
                     end=datetime.timedelta(milliseconds = line.end * 10 + self.options.offset),
                     style=AssConverter.ass_style_name(kbp.KBPStyleCollection.alpha2key(line.style), styles[line.style].name),
                     effect="karaoke",
-                    text=line.text() if styles[line.style].fixed else self.kbp2asstext(line, num),
+                    text=self.kbp2asstext(line, num),
                     # TODO: set margins for proper wrapping? Need to be modified for pos
                     ))
         for idx in styles:
