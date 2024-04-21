@@ -1,6 +1,6 @@
 [project]
 name = "kbputils"
-version = "0.0.3"
+version = "0.0.4"
 authors = [
   { name="Matt M", email="code@itmightbekaraoke.com" },
 ]
@@ -8,6 +8,10 @@ description = "Utilities to handle .kbp files created with Karaoke Builder Studi
 readme = "README.md"
 dependencies = [
     "ass"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: BSD License"
 ]
 [project.scripts]
 KBPUtils = "kbputils.cli:convert_file"
