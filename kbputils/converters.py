@@ -3,12 +3,14 @@ import dataclasses
 import datetime
 import enum
 import types
+import typing
 import collections
 from . import kbp
 from . import validators
 from . import kbs
 
 class AssAlignment(enum.Enum):
+    DEFAULT = 0
     BOTTOM_LEFT = 1
     BOTTOM_CENTER = 2
     BOTTOM_RIGHT = 3
@@ -21,7 +23,24 @@ class AssAlignment(enum.Enum):
     C = 8 # Alias
     TOP_RIGHT = 9
     R = 9 # Alias
-    
+
+@validators.validated_instantiation
+class AssPosition(typing.NamedTuple):
+    rotation: int
+    alignment: AssAlignment
+    x: int | float
+    y: int | float
+
+    def __str__(self):
+        result = "{"
+        if self.alignment != AssAlignment.DEFAULT:
+            result += r"\an%d" % self.alignment.value
+        if self.rotation:
+            result += r"\frz%d" % self.rotation
+        # Yes, %s, so it will stringify either an int or float and display properly
+        result += r"\pos(%s,%s)}" % (self.x, self.y)
+        return result
+
 @validators.validated_instantiation(replace="__init__")
 @dataclasses.dataclass
 class AssOptions:
@@ -119,18 +138,13 @@ class AssConverter:
         return res if (allow_float and int(res) != res) else round(res)
 
     @validators.validated_types
-    def get_pos(self, line: kbp.KBPLine, num: int) -> str:
+    def get_pos(self, line: kbp.KBPLine, num: int) -> AssPosition:
         cdg_res_x = 300 if self.border else 288
         margins = self.kbpFile.margins
+        result = {}
         y = margins["top"] + line.down + num * (self.kbpFile.margins["spacing"] + 19) + (12 if self.border else 0)
 
-        if line.align == self.style_alignments[line.style]:
-            result = r"{"
-        else:
-            result = r"{\an%d" % AssAlignment[line.align].value
-
-        if line.rotation:
-            result += f"\\frz{line.rotation}"
+        result["alignment"] = AssAlignment.DEFAULT if line.align == self.style_alignments[line.style] else AssAlignment[line.align]
 
         if line.align == 'L':
             x = margins["left"] + line.right + (6 if self.border else 0)
@@ -139,10 +153,10 @@ class AssConverter:
         else: #line.align == 'R' or the file is broken
             x = cdg_res_x - margins["right"] + line.right - (6 if self.border else 0)
 
-        # TODO: Adjust margin for line based on pos for better wrapping behavior?
-        # Yes, %s, so it will stringify either an int or float and display properly
-        return result + r"\pos(%s,%s)}" % AssConverter.rescale_coords(x, y, self.target_x, self.target_y, border=self.border, allow_float=self.float_pos)
+        result["x"], result["y"] = AssConverter.rescale_coords(x, y, self.target_x, self.target_y, border=self.border, allow_float=self.float_pos)
 
+        return AssPosition(**result, rotation=line.rotation)
+    
     # Determine the most-used line alignment for each style to minimize \anX tags in result
     # (since alignment is not part of the KBP style, but is part of the ASS style)
     def _calc_style_alignments(self):
@@ -165,7 +179,7 @@ class AssConverter:
     # Convert a line of syllables into the text of a dialogue event including wipe tags
     @validators.validated_types
     def kbp2asstext(self, line: kbp.KBPLine, num: int):
-        result = self.get_pos(line, num) + self.fade()
+        result = str(self.get_pos(line, num)) + self.fade()
         if self.kbpFile.styles[line.style].fixed:
             return result + line.text()
         cur = line.start
