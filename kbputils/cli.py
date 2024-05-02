@@ -1,5 +1,6 @@
 from . import kbp
 from . import converters
+from . import __version__
 import argparse
 import dataclasses
 import io
@@ -7,6 +8,7 @@ import sys
 
 def convert_file():
     parser = argparse.ArgumentParser(prog='KBPUtils', description="Convert .kbp to .ass file", argument_default=argparse.SUPPRESS)
+    parser.add_argument("--version", "-v", action="version", version=__version__)
     for field in dataclasses.fields(converters.AssOptions):
         name = field.name.replace("_", "-")
         parser.add_argument(
@@ -31,7 +33,7 @@ def convert_file():
         print(dest.getvalue())
 
 # Auto-generate short option based on field name
-used_shortopts=set("h")
+used_shortopts=set("hv")
 def gen_shortopt(longopt):
     # Options with - likely have duplication, so use a letter from after the
     # last one
