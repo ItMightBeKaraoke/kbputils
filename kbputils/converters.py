@@ -41,6 +41,15 @@ class AssPosition(typing.NamedTuple):
         result += r"\pos(%s,%s)}" % (self.x, self.y)
         return result
 
+class AssOverflow(enum.Enum):
+    NO_WRAP = 2
+    EVEN_SPLIT = 0
+    TOP_SPLIT = 1
+    BOTTOM_SPLIT = 3
+
+    def __str__(self):
+        return self.name
+
 @validators.validated_instantiation(replace="__init__")
 @dataclasses.dataclass
 class AssOptions:
@@ -50,13 +59,15 @@ class AssOptions:
     #display: int
     #remove: int
     float_font: bool = True # Allow floating point in output font sizes (well-supported)
-    float_pos: bool = False # Allow floating point in \pos coordinates (supported by recent libass)
+    float_pos: bool = False # Allow floating point in \pos and margins (supported by recent libass)
     target_x: int = 300 # Output resolution
     target_y: int = 216
     fade_in: int = 300 # Fade duration for line display/remove
     fade_out: int = 200
     transparency: bool = True
     offset: int | bool = True # False = disable offset (same as 0), True = pull from KBS config, int is offset in ms
+    overflow: AssOverflow = AssOverflow.EVEN_SPLIT
+    #overflow_spacing: float # TODO? spacing value in styles that will apply for overflow (default 0). Multiplied by font height or based on default style?
 
     @validators.validated_types
     @staticmethod
@@ -156,6 +167,20 @@ class AssConverter:
         result["x"], result["y"] = AssConverter.rescale_coords(x, y, self.target_x, self.target_y, border=self.border, allow_float=self.float_pos)
 
         return AssPosition(**result, rotation=line.rotation)
+
+    @validators.validated_types
+    def get_line_margins(self, line: kbp.KBPLine, pos: AssPosition | types.NoneType = None, num: int = 1) -> tuple:
+        if pos is None:
+            pos = self.get_pos(line, num)
+
+        page_margins = self.kbpFile.margins
+
+        left = page_margins["left"] - (0 if line.align == 'L' or (line.align == 'C' and line.right > 0) else line.right)
+        right = page_margins["right"] + (0 if line.align == 'R' or (line.align == 'C' and line.right < 0) else line.right)
+        left, _ = AssConverter.rescale_coords(left, pos.y, self.target_x, self.target_y, border=self.border, allow_float=self.float_pos)
+        right, _ = AssConverter.rescale_coords(right, pos.y, self.target_x, self.target_y, border=self.border, allow_float=self.float_pos)
+
+        return (left, right)
     
     # Determine the most-used line alignment for each style to minimize \anX tags in result
     # (since alignment is not part of the KBP style, but is part of the ASS style)
@@ -178,8 +203,8 @@ class AssConverter:
 
     # Convert a line of syllables into the text of a dialogue event including wipe tags
     @validators.validated_types
-    def kbp2asstext(self, line: kbp.KBPLine, num: int):
-        result = str(self.get_pos(line, num)) + self.fade()
+    def kbp2asstext(self, line: kbp.KBPLine, pos: AssPosition):
+        result = str(pos) + self.fade()
         if self.kbpFile.styles[line.style].fixed:
             return result + line.text()
         cur = line.start
@@ -228,7 +253,7 @@ class AssConverter:
         result.info.update(
             Title="",
             ScriptType="v4.00+",
-            WrapStyle=0,
+            WrapStyle=self.overflow.value,
             ScaledBorderAndShadow="yes",
             Collisions="Normal",
             PlayResX=self.options.target_x,
@@ -247,13 +272,16 @@ class AssConverter:
             for num, line in enumerate(page.lines):
                 if line.isempty():
                     continue
+                pos = self.get_pos(line, num)
+                line_margins = self.get_line_margins(line, pos)
                 result.events.append(ass.Dialogue(
                     start=datetime.timedelta(milliseconds = line.start * 10 + self.options.offset),
                     end=datetime.timedelta(milliseconds = line.end * 10 + self.options.offset),
                     style=AssConverter.ass_style_name(kbp.KBPStyleCollection.alpha2key(line.style), styles[line.style].name),
                     effect="karaoke",
-                    text=self.kbp2asstext(line, num),
-                    # TODO: set margins for proper wrapping? Need to be modified for pos
+                    text=self.kbp2asstext(line, pos),
+                    margin_l=line_margins[0],
+                    margin_r=line_margins[1],
                     ))
         for idx in styles:
             style = styles[idx]
@@ -272,8 +300,8 @@ class AssConverter:
                 strike_out = 'S' in style.fontstyle,
                 outline = AssConverter.rescale_scalar(sum(style.outlines), self.target_x, self.target_y, border=self.border)/4, # NOTE: only one outline, but it's a float, so maybe averaging will be helpful
                 shadow = AssConverter.rescale_scalar(sum(style.shadows), self.target_x, self.target_y, border=self.border)/2,
-                margin_l = 0, # TODO: determine if these should be set and if page margins and line margins stack
-                margin_r = 0,
+                margin_l = 0, # TODO: Decide if these should be set (and overridden on lines only when different)
+                margin_r = 0, # TODO cont: Potentially could also be set by style like alignment based on most-used positions
                 margin_v = 0,
                 encoding = style.charset,
                 alignment=AssAlignment[self.style_alignments.get(kbp.KBPStyleCollection.key2alpha(idx), 'C')].value,
