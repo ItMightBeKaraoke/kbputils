@@ -213,6 +213,7 @@ class KBPLine(typing.NamedTuple):
 @validators.validated_instantiation
 class KBPStyle(typing.NamedTuple):
     name: str
+    style_no: int
     textcolor: str | int
     outlinecolor: str | int
     textwipecolor: str | int
@@ -255,6 +256,7 @@ class KBPStyle(typing.NamedTuple):
         else:
             return style._replace(
                 name = style.name + "_fixed",
+                style_no = -style.style_no,
                 textwipecolor = style.textcolor,
                 outlinewipecolor = style.outlinecolor,
                 fixed = True)
@@ -276,10 +278,21 @@ class KBPStyleCollection(dict):
     def __missing__(self, key):
         if key in list(string.ascii_letters):
             return self[KBPStyleCollection.alpha2key(key)]
+
         # Auto-vivify fixed styles
         elif isinstance(key, int) and -key in self.keys():
             self[key] = self[-key].make_fixed()
             return self[key]
+
+        # Undefined styles should return the default style
+        # The caller can determine this happened if needed by
+        # comparing style.style_no with the requested index
+        # A converter can choose on its side whether it wants
+        # the undefined style to be considered a new one or 
+        # reuse the name of the default
+        elif isinstance(key, int) and (1 <= abs(key) <= 26):
+            return self[1] if key > 0 else self[-1]
+
         else:
             raise KeyError(key)
 
@@ -338,7 +351,8 @@ class KBPStyleCollection(dict):
                 fields = {}
             elif style_no is None and line.startswith("Style"):
                 tmp = line.split(",")
-                style_no = int(tmp[0][5:])
+                style_no = int(tmp[0][5:]) + 1
+                fields['style_no'] = style_no
                 tmp = [tmp[1], *(int(x) for x in tmp[2:])]
                 fields.update(dict(zip(("name", "textcolor", "outlinecolor", "textwipecolor", "outlinewipecolor"),tmp)))
                 tmp = style_lines[n+1].lstrip().split(",")
@@ -354,7 +368,7 @@ class KBPStyleCollection(dict):
                 # Adding 1 to style for 2 reasons:
                 # - Style 0/A is shown in the KBS UI as 01
                 # - It allows indexing fixed styles as negative numbers
-                styles[style_no+1] = result
+                styles[style_no] = result
             # else second/third line of styles already processed
         return styles
     
