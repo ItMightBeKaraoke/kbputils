@@ -170,6 +170,11 @@ class KBPSyllable(typing.NamedTuple):
     def isempty(self):
         return self.syllable == ""
 
+    def isprogressive(self):
+        # Zero means unresolved default wipe, so result is undefined. Otherwise
+        # everything less than 5 is progressive with varying level of wipe detail
+        return None if self.wipe == 0 else (self.wipe < 5)
+
 class KBPLine(typing.NamedTuple):
     header: KBPLineHeader
     syllables: list

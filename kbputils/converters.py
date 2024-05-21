@@ -67,6 +67,7 @@ class AssOptions:
     transparency: bool = True
     offset: int | bool = True # False = disable offset (same as 0), True = pull from KBS config, int is offset in ms
     overflow: AssOverflow = AssOverflow.EVEN_SPLIT
+    allow_kt: bool = False # Use \kt if there are overlapping wipes on the same line (not supported by all ass implementations)
     #overflow_spacing: float # TODO? spacing value in styles that will apply for overflow (default 0). Multiplied by font height or based on default style?
 
     @validators.validated_types
@@ -216,9 +217,13 @@ class AssConverter:
                 # Gap between current position and start of next syllable
                 result += r"{\k%d}" % delay
             elif delay < 0:
-                # Playing catchup - could potentially use \kt to reset time
-                # here but it has limited support
-                dur += delay
+                # Playing catchup
+                if self.allow_kt:
+                    # Reset time so wipes can overlap (\kt takes a time in centiseconds from line start)
+                    result += r"{\kt%d}" % (s.start - line.start)
+                else:
+                    # Shorten syllable to compensate for missing time (keep in mind delay is negative)
+                    dur += delay
 
             # By default a syllable ends 1 centisecond before the next, so
             # special casing so we don't need a bunch of \k1 and the slight
@@ -226,7 +231,9 @@ class AssConverter:
             if len(line.syllables) > n+1 and line.syllables[n+1].start - s.end == 1:
                 dur += 1
 
-            wipe = "\kf" if s.wipe < 5 else "\k"
+            # Using == False explicitly because it's technically a tri-state with None meaning undefined
+            # Though that scenario shouldn't come up since we are allowing KBPFile to resolve wipedetail
+            wipe = "\k" if s.isprogressive() == False else "\kf"
 
             result += r"{%s%d}%s" % (wipe, dur, s.syllable)
             cur = s.start + dur
