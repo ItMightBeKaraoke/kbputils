@@ -233,7 +233,7 @@ class AssConverter:
 
             # Using == False explicitly because it's technically a tri-state with None meaning undefined
             # Though that scenario shouldn't come up since we are allowing KBPFile to resolve wipedetail
-            wipe = "\k" if s.isprogressive() == False else "\kf"
+            wipe = r"\k" if s.isprogressive() == False else r"\kf"
 
             result += r"{%s%d}%s" % (wipe, dur, s.syllable)
             cur = s.start + dur
