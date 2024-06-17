@@ -8,6 +8,7 @@ import collections
 from . import kbp
 from . import validators
 from . import kbs
+from . import kbpfont
 
 class AssAlignment(enum.Enum):
     DEFAULT = 0
@@ -68,6 +69,7 @@ class AssOptions:
     offset: int | bool = True # False = disable offset (same as 0), True = pull from KBS config, int is offset in ms
     overflow: AssOverflow = AssOverflow.EVEN_SPLIT
     allow_kt: bool = False # Use \kt if there are overlapping wipes on the same line (not supported by all ass implementations)
+    experimental_spacing: bool = False
     #overflow_spacing: float # TODO? spacing value in styles that will apply for overflow (default 0). Multiplied by font height or based on default style?
 
     @validators.validated_types
@@ -154,7 +156,10 @@ class AssConverter:
         cdg_res_x = 300 if self.border else 288
         margins = self.kbpFile.margins
         result = {}
-        y = margins["top"] + line.down + num * (self.kbpFile.margins["spacing"] + 19) + (12 if self.border else 0)
+        y = margins["top"] + \
+            line.down + \
+            num * (self.kbpFile.margins["spacing"] + (kbpfont.spacing(self.kbpFile.styles[1]) if self.experimental_spacing else 19)) + \
+            (12 if self.border else 0)
 
         result["alignment"] = AssAlignment.DEFAULT if line.align == self.style_alignments[line.style] else AssAlignment[line.align]
 
