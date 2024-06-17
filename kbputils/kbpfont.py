@@ -15,8 +15,6 @@ font_info = {
     'Verdana': [16, 18, 18, 20, 23, 25, 25]
 }
 
-__warned__ = False
-
 # TODO: object with spacing property
 #def spacing(font, size, bold=False):
 def spacing(style):
@@ -24,14 +22,12 @@ def spacing(style):
     font = style.fontname
     size = style.fontsize
     bold = 'B' in style.fontstyle
-    spacing = 0
+    spacing = None
     if font in font_info:
         if type(cur := font_info[font]) is dict:
             cur = cur['bold' if bold else 'regular']
         if 0 <= size - 10 < len(cur):
             spacing = cur[size - 10]
-    if not spacing and not __warned__:
-        print(f'Font "{font}", size {size}{" (bold)" if bold else ""} not known. Using default spacing of 19 (Arial 12 Bold)', file=sys.stderr)
-        spacing = 19
-        __warned__ = True
+    if spacing is None:
+        raise KeyError(f'Font "{font}", size {size}{" (bold)" if bold else ""} not known. Disable the experimental spacing feature to process the file.')
     return spacing
