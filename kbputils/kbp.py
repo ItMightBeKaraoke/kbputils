@@ -3,17 +3,31 @@ import re
 import string
 import typing
 import io
+import warnings
+import os.path
 from . import validators
 
 class KBPFile:
 
     DIVIDER = "-----------------------------"
+    HEADER_START = "\n".join((
+        DIVIDER,
+        "KARAOKE BUILDER STUDIO",
+        "www.KaraokeBuilder.com",
+        "",
+        DIVIDER,
+        "HEADERV2",
+        "",
+        "'--- Template Information ---",
+        "\n"
+    ))
 
     def __init__(self, kbpFile, **kwargs):
         self.pages = []
         self.images = []
         needsclosed = False
         if not isinstance(kbpFile, io.IOBase):
+            self.filename = kbpFile
             kbpFile = open(kbpFile, "r", encoding="utf-8")
             needsclosed = True
         self.parse([x.rstrip() for x in kbpFile.readlines()], **kwargs)
@@ -38,7 +52,7 @@ class KBPFile:
                 elif line == "'--- Track Information ---":
                     data = kbpLines[x+1:kbpLines.index(KBPFile.DIVIDER, x+1)]
                     self.parse_trackinfo(data)
-                    if self.trackinfo["status"] != '1':
+                    if self.trackinfo["Status"] != '1':
                         raise NotImplementedError("Tracks must be synced before they can be used with kbputils.")
 
             elif divider and line == "PAGEV2":
@@ -61,9 +75,13 @@ class KBPFile:
             elif line != "" and not line.startswith("'"):
                 divider = False
 
-        missing = ', '.join(filter(lambda x: not hasattr(self, x), ('colors', 'styles', 'margins', 'other','pages', 'trackinfo')))
+        missing = ', '.join(filter(lambda x: not hasattr(self, x), ('colors', 'styles', 'margins', 'other','pages')))
         if missing:
             raise ValueError(f"Invalid KBP file, missing sections: {missing}")
+
+        if not hasattr(self, 'trackinfo'):
+            warnings.warn("No track info present, is this a template?")
+
     
 
     def parse_margins(self, margin_line):
@@ -90,7 +108,6 @@ class KBPFile:
                 self.trackinfo[prev] += f"\n{line.lstrip()}"
             elif line != "" and not line.startswith("'"):
                 fields = line.split(maxsplit=1)
-                fields[0] = fields[0].lower()
                 if len(fields) == 1:
                     fields.append("")
                 self.trackinfo[fields[0]] = fields[1]
@@ -111,6 +128,42 @@ class KBPFile:
                     lines.append(line.text(syllable_separator=syllable_separator, space_is_separator=space_is_separator))
             result.append("\n".join(lines))
         return f"\n{page_separator}\n".join(result)
+
+    def writeFile(self, kbpFile, allow_overwrite=False):
+        if any(x.has_colors() for x in self.styles.values()):
+            raise ValueError("Unable to write styles when they contain arbitrary colors. They must use palette indexes.")
+        if not isinstance(kbpFile, io.IOBase):
+            if not allow_overwrite and os.path.exists(kbpFile) and hasattr(self,'filename') and os.path.samefile(kbpFile, self.filename):
+                raise ValueError("Refusing to write back to original filename. Set allow_overwrite if you need to do so.")
+            kbpFile = open(kbpFile, "w", encoding="utf-8",newline="\r\n")
+            needsclosed = True
+        kbpFile.write(KBPFile.HEADER_START)
+        kbpFile.write(self.colors.toKBP())
+        kbpFile.write(self.styles.toKBP())
+        kbpFile.write("\n  ".join((
+            "'Margins : L,R,T,Line Spacing",
+            ",".join(str(x) for x in self.margins.values())
+        )) + "\n\n")
+        kbpFile.write("\n  ".join((
+            "'Other: Border Colour,Detail Level",
+            ",".join(str(x) for x in self.other.values())
+        )) + "\n\n")
+
+        if hasattr(self, 'trackinfo'):
+            kbpFile.write("'--- Track Information ---\n\n")
+            kbpFile.write("\n".join(f"""{'\n' if x == 'Comments' else ''}{x:<10}{
+                ('\n' + ' ' * 10).join(self.trackinfo[x].split('\n'))
+            }""" for x in self.trackinfo) + "\n\n")
+            for page in self.pages:
+                kbpFile.write(page.toKBP())
+            for image in self.images:
+                kbpFile.write(image.toKBP())
+        # else template
+
+        kbpFile.write(KBPFile.DIVIDER + "\n\n")
+
+        if needsclosed:
+            kbpFile.close()
 
 # I didn't want to use a list because it can't have specific size, and liked
 # all the data being tuple-compatible, but still wanted list-like access with [].
@@ -141,6 +194,9 @@ class KBPPalette(collections.namedtuple("KBPPalette", tuple(range(16)), rename=T
     def from_string(palette_line):
         return KBPPalette(*palette_line.lstrip().split(","))
 
+    def toKBP(self):
+        return f"'Palette Colours (0-15)\n  {",".join(self)}\n\n"
+
     def as_rgb24(self):
         return ["".join(y * 2 for y in x) for x in self]
 
@@ -160,6 +216,9 @@ class KBPLineHeader(typing.NamedTuple):
     def isfixed(self):
         return self.style.islower()
 
+    def toKBP(self):
+        return "/".join(str(x) for x in self)
+
 @validators.validated_instantiation
 class KBPSyllable(typing.NamedTuple):
     syllable: str
@@ -174,6 +233,9 @@ class KBPSyllable(typing.NamedTuple):
         # Zero means unresolved default wipe, so result is undefined. Otherwise
         # everything less than 5 is progressive with varying level of wipe detail
         return None if self.wipe == 0 else (self.wipe < 5)
+
+    def toKBP(self):
+        return f"{self.syllable + '/ ':<15}" + "/".join(str(x) for x in self[1:])
 
 class KBPLine(typing.NamedTuple):
     header: KBPLineHeader
@@ -215,10 +277,13 @@ class KBPLine(typing.NamedTuple):
     def isempty(self):
         return not self.syllables or (len(self.syllables) == 1 and self.syllables[0].isempty())
 
+    def toKBP(self):
+        return "\n".join((self.header.toKBP(), *(x.toKBP() for x in self.syllables))) + "\n"
+
 @validators.validated_instantiation
 class KBPStyle(typing.NamedTuple):
-    name: str
     style_no: int
+    name: str
     textcolor: str | int
     outlinecolor: str | int
     textwipecolor: str | int
@@ -266,8 +331,25 @@ class KBPStyle(typing.NamedTuple):
                 outlinewipecolor = style.outlinecolor,
                 fixed = True)
 
+    def toKBP(self):
+        tmp = tuple(str(x) for x in self)
+        return "\n    ".join((
+            ",".join((f"  Style{(self.style_no - 1):02d}",) + tmp[1:6]),
+            ",".join(tmp[6:10]),
+            ",".join(tuple(str(x) for x in self.outlines) + tuple(str(x) for x in self.shadows) + tmp[12:14])
+        )) + "\n\n"
+
 class KBPStyleCollection(dict):
     __slots__ = ()
+
+    HEADER = "\n".join((
+        "'Styles (00-19)",
+        "'  Number,Name",
+        "'  Colour: Text,Outline,Text Wipe,Outline Wipe",
+        "'  Font  : Name,Size,Style,Charset",
+        "'  Other : Outline*4,Shadow*2,Wiping,Uppercase",
+        "\n"
+    ))
 
     def __repr__(self):
         return "KBPStyleCollection(" + super().__repr__() + ")"
@@ -418,6 +500,10 @@ class KBPStyleCollection(dict):
     def alpha_iter(self):
         return iter(self.alpha_keys())
 
+    def toKBP(self):
+        return KBPStyleCollection.HEADER + "".join(x.toKBP() for x in self.values() if x.style_no > 0) + "  StyleEnd\n\n"
+        
+
 @validators.validated_instantiation
 class KBPPage(typing.NamedTuple):
     remove: str
@@ -458,6 +544,10 @@ class KBPPage(typing.NamedTuple):
     def get_end(self):
         return max(line.end for line in self.lines)
 
+    def toKBP(self):
+        transition = (f"FX/{self.remove}/{self.display}\n",) if (self.remove or self.display) else ()
+        return "\n".join((KBPFile.DIVIDER, "PAGEV2", *transition, *(x.toKBP() for x in self.lines))) + "\n"
+
 # Perhaps this could be better named as slideshow, but calling it IMAGE as that's what the header is called in the .kbp
 @validators.validated_instantiation
 class KBPImage(typing.NamedTuple):
@@ -472,3 +562,6 @@ class KBPImage(typing.NamedTuple):
         for x in (0, 1, 3):
             fields[x] = int(fields[x])
         return KBPImage(**dict(zip(("start", "end", "filename", "leaveonscreen"),fields)))
+
+    def toKBP(self):
+        return "\n".join((KBPFile.DIVIDER, "IMAGE", "/".join(str(x) for x in self))) + "\n\n"
