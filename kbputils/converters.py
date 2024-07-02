@@ -5,10 +5,12 @@ import enum
 import types
 import typing
 import collections
+import re
 from . import kbp
 from . import validators
 from . import kbs
 from . import kbpfont
+from . import doblontxt
 
 class AssAlignment(enum.Enum):
     DEFAULT = 0
@@ -322,3 +324,34 @@ class AssConverter:
             
         return result
 
+class DoblonTxtConverter:
+    def __init__(self, doblonTxtFile: doblontxt.DoblonTxt, templateFile: str|types.NoneType = None):
+        self.doblontxt = doblonTxtFile
+        self.template = kbp.KBPFile(templateFile) if templateFile else kbp.KBPFile()
+
+    @staticmethod
+    def syl2kbp(syl: str) -> str:
+        if syl.endswith("-"):
+            syl = syl[:-1]
+        return re.sub("/", "{-}", syl)
+
+    def kbpFile(self):
+        if hasattr(self, 'kbpfile'):
+            return self.kbpfile
+        self.kbpfile = self.template
+        if not hasattr(self.kbpfile, 'trackinfo'):
+            self.kbpfile.trackinfo = {'Status': '1', 'Title': '', 'Artist': '', 'Audio': '', 'BuildFile': '', 'Intro': '', 'Outro': '', 'Comments': 'Created with kbputils\nConverted from Doblon .txt file'}
+        delattr(self, 'template')
+        page = kbp.KBPPage("", "", [])
+        for line in self.doblontxt.lines:
+            if not line or len(page.lines) >= 6:
+                if page.lines:
+                    self.kbpfile.pages.append(page)
+                    page = kbp.KBPPage("", "", [])
+                if not line:
+                    continue
+            line_header = kbp.KBPLineHeader(align="C", style="A", start=round(line[0][0]/10) - 100, end=round(line[-1][1]/10) + 100, right=0, down=0, rotation=0) 
+            kbpline = kbp.KBPLine(line_header, [kbp.KBPSyllable(self.syl2kbp(syl), round(start/10), round(end/10), 0) for start, end, syl in line])
+            page.lines.append(kbpline)
+        self.kbpfile.pages.append(page)
+        return self.kbpfile
