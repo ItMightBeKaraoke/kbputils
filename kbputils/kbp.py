@@ -22,9 +22,15 @@ class KBPFile:
         "\n"
     ))
 
-    def __init__(self, kbpFile, **kwargs):
+    def __init__(self, kbpFile=None, **kwargs):
         self.pages = []
         self.images = []
+        if kbpFile is None:
+            self.colors = KBPPalette("055","FFF","000","E70","940","CFF","033","0DD","077","FCF","303","F3F","818","000","FFF","000")
+            self.styles = KBPStyleCollection({1: KBPStyle(style_no=1, name='Default', textcolor=1, outlinecolor=2, textwipecolor=3, outlinewipecolor=4, fontname='Arial', fontsize=12, fontstyle='B', charset=0, outlines=[2, 2, 2, 2], shadows=[0, 0], wipestyle=0, allcaps='L', fixed=False), 2: KBPStyle(style_no=2, name='Male', textcolor=5, outlinecolor=6, textwipecolor=7, outlinewipecolor=8, fontname='Arial', fontsize=12, fontstyle='B', charset=0, outlines=[2, 2, 2, 2], shadows=[0, 0], wipestyle=0, allcaps='L', fixed=False), 3: KBPStyle(style_no=3, name='Female', textcolor=9, outlinecolor=10, textwipecolor=11, outlinewipecolor=12, fontname='Arial', fontsize=12, fontstyle='B', charset=0, outlines=[2, 2, 2, 2], shadows=[0, 0], wipestyle=0, allcaps='L', fixed=False), 4: KBPStyle(style_no=4, name='Other', textcolor=4, outlinecolor=8, textwipecolor=12, outlinewipecolor=14, fontname='Arial', fontsize=12, fontstyle='B', charset=0, outlines=[2, 2, 2, 2], shadows=[0, 0], wipestyle=0, allcaps='L', fixed=False)})
+            self.margins = {'left': 2, 'right': 2, 'top': 7, 'spacing': 12}
+            self.other = {'bordercolor': 0, 'wipedetail': 2}
+            return
         needsclosed = False
         if not isinstance(kbpFile, io.IOBase):
             self.filename = kbpFile
