@@ -6,6 +6,7 @@ import types
 import typing
 import collections
 import re
+import math
 from . import kbp
 from . import validators
 from . import kbs
@@ -380,17 +381,25 @@ class DoblonTxtConverter:
         delattr(self, 'template')
         if not hasattr(self.kbpfile, 'trackinfo'):
             self.kbpfile.trackinfo = {'Status': '1', 'Title': self.options.title, 'Artist': self.options.artist, 'Audio': self.options.audio_file, 'BuildFile': '', 'Intro': '', 'Outro': '', 'Comments': self.options.comments}
-        page = kbp.KBPPage("", "", [])
+
+        # Add empty line to ensure last page is processed
+        self.doblontxt.lines.append([])
+
+        kbplines = []
         for line in self.doblontxt.lines:
-            if not line or len(page.lines) >= self.options.max_lines_per_page or (page.lines and line[0][1] - self.options.display_before_wipe - page.lines[-1].end*10 > self.options.min_gap_for_new_page):
-                if page.lines:
-                    self.kbpfile.pages.append(page)
-                    if line and (curlen := len(page.lines)) < self.options.max_lines_per_page - 1:
-                        prevlen = len(self.kbpfile.pages[-2].lines)
-                        # Move 0-2 lines from the previous page to the start of this page since there's extra space
-                        for _ in range((prevlen - curlen) // 2):
-                            page.lines.insert(0, self.kbpfile.pages[-2].lines.pop())
-                    page = kbp.KBPPage("", "", [])
+            if not line or (kbplines and line[0][1] - self.options.display_before_wipe - kbplines[-1].end*10 > self.options.min_gap_for_new_page):
+                if kbplines:
+                    num_pages = math.ceil(len(kbplines) / self.options.max_lines_per_page)
+                    per_page = len(kbplines) // num_pages
+                    additional = len(kbplines) % num_pages
+                    cur = 0
+                    for group in range(num_pages):
+                        nxt = cur + per_page + int(additional > 0)
+                        additional -= 1
+                        page = kbp.KBPPage("", "", kbplines[cur:nxt])
+                        self.kbpfile.pages.append(page)
+                        cur = nxt
+                    kbplines = []
                 if not line:
                     continue
             line_header = kbp.KBPLineHeader(
@@ -403,11 +412,5 @@ class DoblonTxtConverter:
                 rotation=0
             ) 
             kbpline = kbp.KBPLine(line_header, [kbp.KBPSyllable(self.syl2kbp(syl), round(start/10), round(end/10), 0) for start, end, syl in line])
-            page.lines.append(kbpline)
-        self.kbpfile.pages.append(page)
-        if (curlen := len(page.lines)) < self.options.max_lines_per_page - 1:
-            prevlen = len(self.kbpfile.pages[-2].lines)
-            # Move 0-2 lines from the previous page to the start of this page since there's extra space
-            for _ in range((prevlen - curlen) // 2):
-                page.lines.insert(0, self.kbpfile.pages[-2].lines.pop())
+            kbplines.append(kbpline)
         return self.kbpfile
