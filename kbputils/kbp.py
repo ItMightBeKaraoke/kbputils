@@ -40,7 +40,7 @@ class KBPFile:
         if needsclosed:
             kbpFile.close()
 
-    def parse(self, kbpLines, resolve_colors=False, resolve_wipe=True):
+    def parse(self, kbpLines, resolve_colors=False, resolve_wipe=True, template=None):
         in_header = False
         divider = False
         for x, line in enumerate(kbpLines):
@@ -56,6 +56,8 @@ class KBPFile:
                 elif line.startswith("'Other"):
                     self.parse_other(kbpLines[x+1])
                 elif line == "'--- Track Information ---":
+                    if template:
+                        return
                     data = kbpLines[x+1:kbpLines.index(KBPFile.DIVIDER, x+1)]
                     self.parse_trackinfo(data)
                     if self.trackinfo["Status"] != '1':
@@ -85,8 +87,8 @@ class KBPFile:
         if missing:
             raise ValueError(f"Invalid KBP file, missing sections: {missing}")
 
-        if not hasattr(self, 'trackinfo'):
-            warnings.warn("No track info present, is this a template?")
+        if not hasattr(self, 'trackinfo') and template == False: # ignore when None
+            raise ValueError("Invalid KBP file, missing track info. If this was intended to be used as a template, set template to True or None")
 
     
 

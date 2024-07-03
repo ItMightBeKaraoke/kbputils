@@ -336,6 +336,7 @@ class DoblonTxtOptions:
     min_gap_for_new_page: int = 1000
     display_before_wipe: int = 1000
     remove_after_wipe: int = 500
+    template_file: str = ''
 
     @validators.validated_types
     @staticmethod
@@ -362,11 +363,11 @@ DoblonTxtOptions._fields = types.MappingProxyType(dict((f.name,f) for f in datac
 
 class DoblonTxtConverter:
     @validators.validated_types
-    def __init__(self, doblonTxtFile: doblontxt.DoblonTxt, templateFile: str|types.NoneType = None, options: DoblonTxtOptions | types.NoneType = None, **kwargs):
+    def __init__(self, doblonTxtFile: doblontxt.DoblonTxt, options: DoblonTxtOptions | types.NoneType = None, **kwargs):
         self.doblontxt = doblonTxtFile
-        self.template = kbp.KBPFile(templateFile) if templateFile else kbp.KBPFile()
         self.options = options or DoblonTxtOptions()
         self.options.update(**kwargs)
+        self.template = kbp.KBPFile(self.options.template_file, template=True) if self.options.template_file else kbp.KBPFile()
 
     @staticmethod
     def syl2kbp(syl: str) -> str:
