@@ -157,9 +157,15 @@ class KBPFile:
 
         if hasattr(self, 'trackinfo'):
             kbpFile.write("'--- Track Information ---\n\n")
-            kbpFile.write("\n".join(f"""{'\n' if x == 'Comments' else ''}{x:<10}{
-                ('\n' + ' ' * 10).join(self.trackinfo[x].split('\n'))
-            }""" for x in self.trackinfo) + "\n\n")
+            for x in self.trackinfo:
+                if x == 'Comments':
+                    kbpFile.write("\n")
+                tmp = ('\n' + ' ' * 10).join(self.trackinfo[x].split('\n'))
+                kbpFile.write(f"{x:<10}{tmp}\n")
+            kbpFile.write("\n")
+            #kbpFile.write("\n".join(f"""{'\n' if x == 'Comments' else ''}{x:<10}{
+            #    ('\n' + ' ' * 10).join(self.trackinfo[x].split('\n'))
+            #}""" for x in self.trackinfo) + "\n\n")
             for page in self.pages:
                 kbpFile.write(page.toKBP())
             for image in self.images:

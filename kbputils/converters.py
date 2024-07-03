@@ -324,10 +324,48 @@ class AssConverter:
             
         return result
 
+@validators.validated_instantiation(replace="__init__")
+@dataclasses.dataclass
+class DoblonTxtOptions:
+    title: str = ''
+    artist: str = ''
+    audio_file: str = ''
+    comments: str = 'Created with kbputils\nConverted from Doblon .txt file'
+    max_lines_per_page: int = 6
+    min_gap_for_new_page: int = 1000
+    display_before_wipe: int = 1000
+    remove_after_wipe: int = 500
+
+    @validators.validated_types
+    @staticmethod
+    def __assert_valid(key: str, value):
+        if key in DoblonTxtOptions._fields:
+            if not isinstance(value, (t := DoblonTxtOptions._fields[key].type)):
+                if callable(t):
+                    value = t(value)
+                # Also try the first type in a union
+                elif hasattr(t, '__args__') and callable(s := t.__args__[0]):
+                    value = s(value)
+            elif not isinstance(value, t):
+                raise TypeError(f"Expected {opt} to be of type {t}. Found {type(options[opt])}.")
+        else:
+            raise TypeError(f"Unexpected field '{key}'. Possible fields are {self._fields.keys()}.")
+
+        return value
+
+    @validators.validated_structures(assert_function=__assert_valid)
+    def update(self, **options):
+        for opt in options:
+            setattr(self, opt, options[opt])
+DoblonTxtOptions._fields = types.MappingProxyType(dict((f.name,f) for f in dataclasses.fields(DoblonTxtOptions)))
+
 class DoblonTxtConverter:
-    def __init__(self, doblonTxtFile: doblontxt.DoblonTxt, templateFile: str|types.NoneType = None):
+    @validators.validated_types
+    def __init__(self, doblonTxtFile: doblontxt.DoblonTxt, templateFile: str|types.NoneType = None, options: DoblonTxtOptions | types.NoneType = None, **kwargs):
         self.doblontxt = doblonTxtFile
         self.template = kbp.KBPFile(templateFile) if templateFile else kbp.KBPFile()
+        self.options = options or DoblonTxtOptions()
+        self.options.update(**kwargs)
 
     @staticmethod
     def syl2kbp(syl: str) -> str:
@@ -339,19 +377,37 @@ class DoblonTxtConverter:
         if hasattr(self, 'kbpfile'):
             return self.kbpfile
         self.kbpfile = self.template
-        if not hasattr(self.kbpfile, 'trackinfo'):
-            self.kbpfile.trackinfo = {'Status': '1', 'Title': '', 'Artist': '', 'Audio': '', 'BuildFile': '', 'Intro': '', 'Outro': '', 'Comments': 'Created with kbputils\nConverted from Doblon .txt file'}
         delattr(self, 'template')
+        if not hasattr(self.kbpfile, 'trackinfo'):
+            self.kbpfile.trackinfo = {'Status': '1', 'Title': self.options.title, 'Artist': self.options.artist, 'Audio': self.options.audio_file, 'BuildFile': '', 'Intro': '', 'Outro': '', 'Comments': self.options.comments}
         page = kbp.KBPPage("", "", [])
         for line in self.doblontxt.lines:
-            if not line or len(page.lines) >= 6:
+            if not line or len(page.lines) >= self.options.max_lines_per_page or (page.lines and line[0][1] - self.options.display_before_wipe - page.lines[-1].end*10 > self.options.min_gap_for_new_page):
                 if page.lines:
                     self.kbpfile.pages.append(page)
+                    if line and (curlen := len(page.lines)) < self.options.max_lines_per_page - 1:
+                        prevlen = len(self.kbpfile.pages[-2].lines)
+                        # Move 0-2 lines from the previous page to the start of this page since there's extra space
+                        for _ in range((prevlen - curlen) // 2):
+                            page.lines.insert(0, self.kbpfile.pages[-2].lines.pop())
                     page = kbp.KBPPage("", "", [])
                 if not line:
                     continue
-            line_header = kbp.KBPLineHeader(align="C", style="A", start=round(line[0][0]/10) - 100, end=round(line[-1][1]/10) + 100, right=0, down=0, rotation=0) 
+            line_header = kbp.KBPLineHeader(
+                align="C",
+                style="A",
+                start=round((line[0][0] - self.options.display_before_wipe)/10),
+                end=round((line[-1][1] + self.options.remove_after_wipe)/10),
+                right=0,
+                down=0,
+                rotation=0
+            ) 
             kbpline = kbp.KBPLine(line_header, [kbp.KBPSyllable(self.syl2kbp(syl), round(start/10), round(end/10), 0) for start, end, syl in line])
             page.lines.append(kbpline)
         self.kbpfile.pages.append(page)
+        if (curlen := len(page.lines)) < self.options.max_lines_per_page - 1:
+            prevlen = len(self.kbpfile.pages[-2].lines)
+            # Move 0-2 lines from the previous page to the start of this page since there's extra space
+            for _ in range((prevlen - curlen) // 2):
+                page.lines.insert(0, self.kbpfile.pages[-2].lines.pop())
         return self.kbpfile
