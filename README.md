@@ -5,27 +5,38 @@ This is a module containing utilities to handle .kbp files created with Karaoke 
 
 Current contents are:
 
-KBPFile class to parse a .kbp file into a data structure:
+Parsers
+-------
+
+### Karaoke Builder Studio (.kbp)
 
     k = kbputils.KBPFile(filename)
 
-DoblonTxt module to parse a Doblon full timing lyrics .txt export:
+### Doblon (full timing lyrics export .txt)
 
     d = kbputils.DoblonTxt(filename)
 
-converters module which currently contains a converter from .kbp to .ass as well as one from a Doblon .txt to .kbp:
+Converters
+----------
+
+### .kbp to .ass
 
     ass_converter = kbputils.AssConverter(k) # Several options are available to tweak processing
     doc = converter.ass_document()  # generate an ass.Document from the ass module
     with open("outputfile.ass", "w", encoding='utf_8_sig') as f:
         doc.dump_file(f)
 
+### Doblon .txt to .kbp
+
     doblon_converter = kbputils.DoblonTxtConverter(d) # Several options are available to tweak processing
     kbp = doblon_converter.kbpFile()  # generate a KBPFile data structure
     with open("outputfile.kbp", "w", encoding='utf-8', newline='\r\n') as f:
         kbp.writeFile(f) # writeFile() can also just take a filename so you don't need to create a file handle like this
 
-There's also a CLI for both converters (command and syntax subject to change):
+Converter CLIs
+--------------
+
+### .kbp to .ass
 
     $ KBPUtils kbp2ass --help
     usage: KBPUtils kbp2ass [-h] [--border | --no-border | -b] [--float-font | --no-float-font | -f] [--float-pos | --no-float-pos | -p]
@@ -67,6 +78,8 @@ There's also a CLI for both converters (command and syntax subject to change):
       --experimental-spacing, --no-experimental-spacing, -a
                             bool (default: False)
       --version, -V         show program's version number and exit
+
+### Doblon .txt to .kbp
 
     $ KBPUtils doblontxt2kbp --help
     usage: KBPUtils doblontxt2kbp [-h] [--title TITLE] [--artist ARTIST] [--audio-file AUDIO_FILE] [--comments COMMENTS]
