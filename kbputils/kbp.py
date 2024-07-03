@@ -143,6 +143,8 @@ class KBPFile:
                 raise ValueError("Refusing to write back to original filename. Set allow_overwrite if you need to do so.")
             kbpFile = open(kbpFile, "w", encoding="utf-8",newline="\r\n")
             needsclosed = True
+        else:
+            needsclosed = False
         kbpFile.write(KBPFile.HEADER_START)
         kbpFile.write(self.colors.toKBP())
         kbpFile.write(self.styles.toKBP())
