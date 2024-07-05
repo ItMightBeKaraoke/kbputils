@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-__version__ = '0.0.12'
+__version__ = '0.0.13'
 
 __all__ = ['KBPFile', 'AssConverter', 'DoblonTxtConverter', 'LRCConverter']
 
