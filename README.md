@@ -16,6 +16,10 @@ Parsers
 
     d = kbputils.DoblonTxt(filename)
 
+### Enhanced .lrc
+
+    l = kbputils.LRC(filename)
+
 Converters
 ----------
 
@@ -32,6 +36,15 @@ Converters
     kbp = doblon_converter.kbpFile()  # generate a KBPFile data structure
     with open("outputfile.kbp", "w", encoding='utf-8', newline='\r\n') as f:
         kbp.writeFile(f) # writeFile() can also just take a filename so you don't need to create a file handle like this
+
+### Enhanced .lrc to .kbp
+
+    lrc_converter = kbputils.LRCConverter(l) # Several options are available to tweak processing
+    kbp = lrc_converter.kbpFile()  # generate a KBPFile data structure
+    with open("outputfile.kbp", "w", encoding='utf-8', newline='\r\n') as f:
+        kbp.writeFile(f) # writeFile() can also just take a filename so you don't need to create a file handle like this
+
+If the title, author, and comment options are not overridden when constructing the converter and are specified in the appropriate LRC tags, those are used in the .kbp.
 
 Converter CLIs
 --------------
@@ -103,6 +116,40 @@ Converter CLIs
                             str (default: )
       --comments COMMENTS, -c COMMENTS
                             str (default: Created with kbputils Converted from Doblon .txt file)
+      --max-lines-per-page MAX_LINES_PER_PAGE, -p MAX_LINES_PER_PAGE
+                            int (default: 6)
+      --min-gap-for-new-page MIN_GAP_FOR_NEW_PAGE, -g MIN_GAP_FOR_NEW_PAGE
+                            int (default: 1000)
+      --display-before-wipe DISPLAY_BEFORE_WIPE, -w DISPLAY_BEFORE_WIPE
+                            int (default: 1000)
+      --remove-after-wipe REMOVE_AFTER_WIPE, -i REMOVE_AFTER_WIPE
+                            int (default: 500)
+      --version, -V         show program's version number and exit
+
+### Enhanced .lrc to .kbp
+
+    $ KBPUtils lrc2kbp --help
+    usage: KBPUtils lrc2kbp [-h] [--title TITLE] [--artist ARTIST] [--audio-file AUDIO_FILE] [--comments COMMENTS]
+                                  [--max-lines-per-page MAX_LINES_PER_PAGE] [--min-gap-for-new-page MIN_GAP_FOR_NEW_PAGE]
+                                  [--display-before-wipe DISPLAY_BEFORE_WIPE] [--remove-after-wipe REMOVE_AFTER_WIPE] [--version]
+                                  source_file [dest_file]
+
+    Convert Enhanced .lrc to .kbp
+
+    positional arguments:
+      source_file
+      dest_file
+
+    options:
+      -h, --help            show this help message and exit
+      --title TITLE, -t TITLE
+                            str (default: )
+      --artist ARTIST, -a ARTIST
+                            str (default: )
+      --audio-file AUDIO_FILE, -f AUDIO_FILE
+                            str (default: )
+      --comments COMMENTS, -c COMMENTS
+                            str (default: Created with kbputils Converted from Enhanced LRC file)
       --max-lines-per-page MAX_LINES_PER_PAGE, -p MAX_LINES_PER_PAGE
                             int (default: 6)
       --min-gap-for-new-page MIN_GAP_FOR_NEW_PAGE, -g MIN_GAP_FOR_NEW_PAGE

@@ -1,5 +1,6 @@
 from . import kbp
 from . import doblontxt
+from . import lrc
 from . import converters
 from . import __version__
 import argparse
@@ -36,6 +37,19 @@ def convert_file():
                 'newline': '\r\n'
             },
             'options': converters.DoblonTxtOptions
+        },
+        'lrc2kbp': {
+            'add_parser': {
+                'description': 'Convert Enhanced .lrc to .kbp',
+                'argument_default': argparse.SUPPRESS
+            },
+            'input': lrc.LRC,
+            'output': lambda source, args, dest: converters.LRCConverter(source, **vars(args)).kbpFile().writeFile(dest),
+            'output_opts': {
+                'encoding': 'utf-8',
+                'newline': '\r\n'
+            },
+            'options': converters.LRCOptions
         }
     }
 
