@@ -1,10 +1,12 @@
 import re
+import charset_normalizer
 
 class LRC:
     def __init__(self, lrcfile: str):
         self.lines = []
         self.tags = {}
-        with open(lrcfile, 'r') as f:
+        # TODO: look into only opening the file once
+        with open(lrcfile, 'r', encoding=charset_normalizer.from_path(lrcfile).best().encoding) as f:
             for lrcline in f:
                 lrcline = lrcline.rstrip("\r\n")
                 if re.fullmatch(r'\[\d{2}:\d{2}.\d{2}\]\s+(<\d{2}:\d{2}.\d{2}>[^<>]*)+<\d{2}:\d{2}.\d{2}>', lrcline):

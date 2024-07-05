@@ -1,10 +1,12 @@
 import re
+import charset_normalizer
 
 class DoblonTxt:
     def __init__(self, txtfile: str):
         lines = []
         line = []
-        with open(txtfile, 'r') as f:
+        # TODO: look into only opening the file once
+        with open(txtfile, 'r', encoding=charset_normalizer.from_path(txtfile).best().encoding) as f:
             for syl in f:
                 start, stop, text = syl.rstrip("\n").split('-', maxsplit=2)
                 while text.startswith("\\n"):
