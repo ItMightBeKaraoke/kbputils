@@ -251,7 +251,7 @@ class KBPSyllable(typing.NamedTuple):
         return None if self.wipe == 0 else (self.wipe < 5)
 
     def toKBP(self):
-        return f"{self.syllable + '/ ':<15}" + "/".join(str(x) for x in self[1:])
+        return f"{self.syllable + '/':<15}" + "/".join(str(x) for x in self[1:])
 
 class KBPLine(typing.NamedTuple):
     header: KBPLineHeader
