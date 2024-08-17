@@ -211,7 +211,7 @@ class KBPPalette(collections.namedtuple("KBPPalette", tuple(range(16)), rename=T
         return KBPPalette(*palette_line.lstrip().split(","))
 
     def toKBP(self):
-        return f"'Palette Colours (0-15)\n  {",".join(self)}\n\n"
+        return f"'Palette Colours (0-15)\n  {','.join(self)}\n\n"
 
     def as_rgb24(self):
         return ["".join(y * 2 for y in x) for x in self]
