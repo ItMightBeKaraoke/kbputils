@@ -211,6 +211,17 @@ class AssConverter:
     def fade(self) -> str:
         return r"{\fad(%d,%d)}" % (self.options.fade_in, self.options.fade_out)
 
+    # Apply escape sequences needed when converting syllables in .kbp to .ass
+    @staticmethod
+    @validators.validated_types
+    def kbpsyl2ass(syltext: str, firstSyl: bool = False):
+        res = syltext.replace("{~}","/") # Literal / in .kbp, because / itself ends the syllable
+        res = re.sub(r"\\(?=[Nnh])", "\\\u200b", res) # These escapes have special meaning in .ass, so add zero-width char in the middle
+        res = re.sub(r"[{}]", r"\\1", res) # Escape literal {} so not to create a tag
+        if firstSyl:
+            res = re.sub(r"^ ", re.escape(r"\h"), res) # Spaces at the start of a line are ignored in .ass, so insert a \h
+        return res
+
     # Convert a line of syllables into the text of a dialogue event including wipe tags
     @validators.validated_types
     def kbp2asstext(self, line: kbp.KBPLine, pos: AssPosition):
@@ -244,7 +255,7 @@ class AssConverter:
             # Though that scenario shouldn't come up since we are allowing KBPFile to resolve wipedetail
             wipe = r"\k" if s.isprogressive() == False else r"\kf"
 
-            result += r"{%s%d}%s" % (wipe, dur, s.syllable)
+            result += r"{%s%d}%s" % (wipe, dur, self.kbpsyl2ass(s.syllable, n==0))
             cur = s.start + dur
         return result
 
@@ -374,7 +385,7 @@ class DoblonTxtConverter:
     def syl2kbp(syl: str) -> str:
         if syl.endswith("-"):
             syl = syl[:-1]
-        return re.sub("/", "{-}", syl)
+        return syl.replace("/", "{~}")
 
     def kbpFile(self):
         if hasattr(self, 'kbpfile'):
@@ -468,7 +479,7 @@ class LRCConverter:
     def syl2kbp(syl: str) -> str:
         if syl.endswith("-"):
             syl = syl[:-1]
-        return re.sub("/", "{-}", syl)
+        return syl.replace("/", "{~}")
 
     def kbpFile(self):
         if hasattr(self, 'kbpfile'):
