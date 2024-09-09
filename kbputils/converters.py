@@ -303,8 +303,8 @@ class AssConverter:
                 line_margins = self.get_line_margins(line, pos)
                 line_style = styles[line.style]
                 result.events.append(ass.Dialogue(
-                    start=datetime.timedelta(milliseconds = line.start * 10 + self.options.offset),
-                    end=datetime.timedelta(milliseconds = line.end * 10 + self.options.offset),
+                    start=datetime.timedelta(milliseconds = max(0, line.start * 10 + self.options.offset)),
+                    end=datetime.timedelta(milliseconds = max(0, line.end * 10 + self.options.offset)),
                     style=AssConverter.ass_style_name(line_style.style_no, line_style.name), # Undefined styles get default style number
                     effect="karaoke",
                     text=self.kbp2asstext(line, pos),
