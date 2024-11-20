@@ -5,7 +5,7 @@ import sys
 def _fetch_offset():
     if os.environ.get('APPDATA') and os.path.exists(p := os.path.join(os.environ['APPDATA'], 'Karaoke Builder', 'data_studio.ini')):
         try:
-            with open(p, 'r') as f:
+            with open(p, 'r', encoding="utf-8") as f:
                 for line in f:
                     field, val = line.split(maxsplit=1)
                     if field == "setoffset":
