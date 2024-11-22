@@ -8,6 +8,7 @@ import dataclasses
 import io
 import sys
 import collections
+import string
 
 def convert_file():
     parser = argparse.ArgumentParser(prog='KBPUtils', description="Various utilities for .kbp files", argument_default=argparse.SUPPRESS)
@@ -60,16 +61,22 @@ def convert_file():
 
         for field in dataclasses.fields(parser_data[p]['options']):
             name = field.name.replace("_", "-")
+            t = field.type
 
             additional_params = {}
-            if field.type == int | bool:
+            if hasattr(field.type, "__args__"):
+                # Handle container types (only with single type entries)
+                t = field.type.__args__[0]
+                additional_params["nargs"] = "*"
+
+            if t == int | bool:
                 additional_params["type"] = int_or_bool 
-            elif hasattr(field.type, "__members__") and hasattr(field.type, "__getitem__"):
+            elif hasattr(t, "__members__") and hasattr(t, "__getitem__"):
                 # Handle enum types
-                additional_params["type"] = field.type.__getitem__
-                additional_params["choices"] = field.type.__members__.values()
+                additional_params["type"] = t.__getitem__
+                additional_params["choices"] = t.__members__.values()
             else:
-                additional_params["type"] = field.type
+                additional_params["type"] = t
 
             cur.add_argument(
                 f"--{name}",
@@ -101,10 +108,12 @@ def gen_shortopt(command, longopt):
     # last one
     if len(parts := longopt.split("-")) > 1:
         return gen_shortopt(command, parts[-1])
-    for char in longopt:
+    # Prioritize characters from the option name, otherwise just go for anything
+    for char in longopt + string.ascii_lowercase:
         if char not in used_shortopts[command]:
             used_shortopts[command].add(char)
             return f"-{char}"
+    raise ValueError(f"No available characters to use to create short option for {longopt}")
 
 # Coerce a string value into a bool or int
 # Accept true|false (case-insensitive), otherwise try int

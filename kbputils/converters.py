@@ -5,6 +5,7 @@ import enum
 import types
 import typing
 import collections
+import collections.abc
 import re
 import math
 from . import kbp
@@ -46,11 +47,43 @@ class AssPosition(typing.NamedTuple):
         result += r"\pos(%s,%s)}" % (self.x, self.y)
         return result
 
+@validators.validated_instantiation
+class AssMove(typing.NamedTuple):
+    orig: AssPosition
+    new: AssPosition
+    start: int
+    end: int
+
+    def __str__(self):
+        result = "{"
+        # TODO: Error if orig.alignment != new.alignment?
+        if self.orig.alignment != AssAlignment.DEFAULT:
+            result += r"\an%d" % self.orig.alignment.value
+        # TODO: \t if orig.rotation != new.rotation?
+        if self.orig.rotation:
+            result += r"\frz%d" % self.orig.rotation
+        # Yes, %s, so it will stringify either an int or float and display properly
+        result += r"\move(%s,%s,%s,%s,%d,%d)}" % (self.orig.x, self.orig.y, self.new.x, self.new.y, self.start, self.end)
+        return result
+
 class AssOverflow(enum.Enum):
     NO_WRAP = 2
     EVEN_SPLIT = 0
     TOP_SPLIT = 1
     BOTTOM_SPLIT = 3
+
+    def __str__(self):
+        return self.name
+
+class AssEffect(enum.Enum):
+    SCROLLING = enum.auto()
+
+    def __str__(self):
+        return self.name
+
+class AssScroll(enum.Enum):
+    IN_LINE_START = enum.auto()
+    OUT_LINE_END = enum.auto()
 
     def __str__(self):
         return self.name
@@ -72,22 +105,31 @@ class AssOptions:
     transparency: bool = True
     offset: int | bool = True # False = disable offset (same as 0), True = pull from KBS config, int is offset in ms
     overflow: AssOverflow = AssOverflow.EVEN_SPLIT
+    #overflow_spacing: float # TODO? spacing value in styles that will apply for overflow (default 0). Multiplied by font height or based on default style?
     allow_kt: bool = False # Use \kt if there are overlapping wipes on the same line (not supported by all ass implementations)
     experimental_spacing: bool = False
-    #overflow_spacing: float # TODO? spacing value in styles that will apply for overflow (default 0). Multiplied by font height or based on default style?
+    effects: collections.abc.Iterable[AssEffect] = ()
+    scrolling_type: AssScroll = AssScroll.IN_LINE_START
+    # scrolling_active_line: int # TODO? Choose which position to put the line actively wiping (default 2)
+    # scrolling_last_line: int # TODO? Choose how many lines to display on page (default as many as fit)
+    scrolling_duration: int = 500
+    scrolling_offset: int = -50
 
     @validators.validated_types
     @staticmethod
     def __assert_valid(key: str, value):
         if key in AssOptions._fields:
-            if not isinstance(value, (t := AssOptions._fields[key].type)):
+            if hasattr((t := AssOptions._fields[key].type),"__args__"):
+                if not all(isinstance(x, t.__args__) for x in value):
+                    raise TypeError(f"Expected {value} to be of type {t}. Found {type(value)}.")
+            elif not isinstance(value, t):
                 if callable(t):
                     value = t(value)
                 # Also try the first type in a union
                 elif hasattr(t, '__args__') and callable(s := t.__args__[0]):
                     value = s(value)
             elif not isinstance(value, t):
-                raise TypeError(f"Expected {opt} to be of type {t}. Found {type(options[opt])}.")
+                raise TypeError(f"Expected {value} to be of type {t}. Found {type(value)}.")
         else:
             raise TypeError(f"Unexpected field '{key}'. Possible fields are {self._fields.keys()}.")
 
@@ -208,8 +250,8 @@ class AssConverter:
             self.style_alignments[style] = max(freqs[style], key = freqs[style].get)
 
     @validators.validated_types
-    def fade(self) -> str:
-        return r"{\fad(%d,%d)}" % (self.options.fade_in, self.options.fade_out)
+    def fade(self, fade_in: int | types.NoneType = None, fade_out: int | types.NoneType = None) -> str:
+        return r"{\fad(%d,%d)}" % (fade_in if fade_in is not None else self.options.fade_in, fade_out if fade_out is not None else self.options.fade_out)
 
     # Apply escape sequences needed when converting syllables in .kbp to .ass
     @staticmethod
@@ -224,8 +266,8 @@ class AssConverter:
 
     # Convert a line of syllables into the text of a dialogue event including wipe tags
     @validators.validated_types
-    def kbp2asstext(self, line: kbp.KBPLine, pos: AssPosition):
-        result = str(pos) + self.fade()
+    def kbp2asstext(self, line: kbp.KBPLine, pos: AssPosition | AssMove, fade_in: int | types.NoneType = None, fade_out: int | types.NoneType = None):
+        result = str(pos) + self.fade(fade_in, fade_out) # TODO: fade correctly on move
         if self.kbpFile.styles[line.style].fixed:
             return result + line.text()
         cur = line.start
@@ -238,7 +280,7 @@ class AssConverter:
                 result += r"{\k%d}" % delay
             elif delay < 0:
                 # Playing catchup
-                if self.allow_kt:
+                if self.allow_kt and s.start - line.start > 0:
                     # Reset time so wipes can overlap (\kt takes a time in centiseconds from line start)
                     result += r"{\kt%d}" % (s.start - line.start)
                 else:
@@ -251,12 +293,17 @@ class AssConverter:
             if len(line.syllables) > n+1 and line.syllables[n+1].start - s.end == 1:
                 dur += 1
 
-            # Using == False explicitly because it's technically a tri-state with None meaning undefined
-            # Though that scenario shouldn't come up since we are allowing KBPFile to resolve wipedetail
-            wipe = r"\k" if s.isprogressive() == False else r"\kf"
+            if dur >= 0:
+                # Using == False explicitly because it's technically a tri-state with None meaning undefined
+                # Though that scenario shouldn't come up since we are allowing KBPFile to resolve wipedetail
+                wipe = r"\k" if s.isprogressive() == False else r"\kf"
+                cur = s.start + dur
+            else:
+                dur = 0
+                wipe = r"\k"
+                # cur remains the same, more catchup needed
 
             result += r"{%s%d}%s" % (wipe, dur, self.kbpsyl2ass(s.syllable, n==0))
-            cur = s.start + dur
         return result
 
     @validators.validated_types
@@ -274,6 +321,48 @@ class AssConverter:
             # This will intentionally raise an exception if colors are unresolved and palette is not provided
             kbpcolor = palette[kbpcolor]
         return alpha + "".join(x+x for x in reversed(list(kbpcolor)))
+
+    @validators.validated_types(coerce_types=False)
+    def scrolling_generate_events(self, page: kbp.KBPPage) -> list:
+        top_margin = self.get_pos(kbp.KBPLine(kbp.KBPLineHeader("C","A",0,0,0,0,0),[]),0).y
+        result = []
+        newest = -1
+        for origin_num, origin_line in enumerate(page.lines):
+            if origin_num == 0 and self.options.scrolling_type == AssScroll.OUT_LINE_END:
+                continue
+            if self.options.scrolling_type == AssScroll.IN_LINE_START:
+                end = (origin_line.syllables[0].start - origin_line.start) * 10 + self.options.scrolling_offset
+                start = end - self.options.scrolling_duration
+            else: # AssScroll.OUT_LINE_END
+                start = (origin_line.syllables[-1].end - origin_line.start) * 10 + self.options.scrolling_offset
+                end = start + self.options.scrolling_duration
+            # TODO: sliding window these instead of checking all?
+            for num, line in enumerate(page.lines):
+                if line.isempty():
+                    continue
+                move = AssMove(self.get_pos(line, num-origin_num+2), self.get_pos(line, num-origin_num+1), start, end)
+                line_margins = self.get_line_margins(line, move.orig)
+                line_style = self.kbpFile.styles[line.style]
+                line_end = line.start * 10 + end
+                page.lines[num] = line._replace(header=line.header._replace(start=line_end // 10))
+                if move.orig.y < top_margin or move.orig.y > self.target_y - top_margin:
+                    continue
+                first = num - origin_num + 2 == 0
+                last = newest < num
+                if last:
+                    move = move._replace(start=0,end=self.options.scrolling_duration)
+                result.append(ass.Dialogue(
+                    start=datetime.timedelta(milliseconds = max(0, (line_end - self.options.scrolling_duration if last else line.start * 10) + self.options.offset)),
+                    end=datetime.timedelta(milliseconds = max(0, (line_end - self.options.scrolling_duration + self.options.fade_out if first else line_end) + self.options.offset)),
+                    style=AssConverter.ass_style_name(line_style.style_no, line_style.name), # Undefined styles get default style number
+                    effect="karaoke",
+                    text=self.kbp2asstext(line, move, fade_in = None if last else 0, fade_out = None if first else 0),
+                    margin_l=line_margins[0],
+                    margin_r=line_margins[1],
+                    ))
+                if newest < num:
+                    newest = num
+        return result
 
     def ass_document(self):
         result = ass.Document()
@@ -296,6 +385,9 @@ class AssConverter:
         styles = self.kbpFile.styles
         self._calc_style_alignments()
         for page in self.kbpFile.pages:
+            if AssEffect.SCROLLING in self.options.effects and self.get_pos(page.lines[-1], len(page.lines)-1).y > self.options.target_y:
+                result.events.extend(self.scrolling_generate_events(page))
+                continue
             for num, line in enumerate(page.lines):
                 if line.isempty():
                     continue
