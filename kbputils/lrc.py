@@ -6,7 +6,10 @@ class LRC:
         self.lines = []
         self.tags = {}
         # TODO: look into only opening the file once
-        with open(lrcfile, 'r', encoding=charset_normalizer.from_path(lrcfile).best().encoding) as f:
+        with open(lrcfile, 'rb') as f:
+            # Use this instead of from_path because it returns UTF-8-SIG if there's a BOM, where .best().encoding doesn't
+            encoding = charset_normalizer.detect(f.read())['encoding']
+        with open(lrcfile, 'r', encoding=encoding) as f:
             for lrcline in f:
                 lrcline = lrcline.rstrip("\r\n")
                 if re.fullmatch(r'\[\d{2}:\d{2}.\d{2}\]\s+(<\d{2}:\d{2}.\d{2}>[^<>]*)+<\d{2}:\d{2}.\d{2}>', lrcline):

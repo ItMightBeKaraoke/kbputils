@@ -6,7 +6,10 @@ class DoblonTxt:
         lines = []
         line = []
         # TODO: look into only opening the file once
-        with open(txtfile, 'r', encoding=charset_normalizer.from_path(txtfile).best().encoding) as f:
+        with open(txtfile, 'rb') as f:
+            # Use this instead of from_path because it returns UTF-8-SIG if there's a BOM, where .best().encoding doesn't
+            encoding = charset_normalizer.detect(f.read())['encoding']
+        with open(txtfile, 'r', encoding=encoding) as f:
             for syl in f:
                 start, stop, text = syl.rstrip("\n").split('-', maxsplit=2)
                 while text.startswith("\\n"):
