@@ -44,44 +44,57 @@ class KBPFile:
         in_header = False
         divider = False
         for x, line in enumerate(kbpLines):
-            if in_header:
-                if line.startswith("'Palette Colours"):
-                    self.colors = KBPPalette.from_string(kbpLines[x+1])
-                elif line.startswith("'Styles"):
-                    data = kbpLines[x+1:kbpLines.index("  StyleEnd", x+1)]
-                    opts = {"palette": self.colors} if resolve_colors else {}
-                    self.styles = KBPStyleCollection.from_textlines([x for x in data if not x.startswith("'")], **opts)
-                elif line.startswith("'Margins"):
-                    self.parse_margins(kbpLines[x+1])
-                elif line.startswith("'Other"):
-                    self.parse_other(kbpLines[x+1])
-                elif line == "'--- Track Information ---":
-                    if template:
-                        return
+            cursor = [1, slice(0,2)]
+            try:
+                if in_header:
+                    if line.startswith("'Palette Colours"):
+                        self.colors = KBPPalette.from_string(kbpLines[x+1])
+                    elif line.startswith("'Styles"):
+                        data = kbpLines[x+1:kbpLines.index("  StyleEnd", x+1)]
+                        cursor = [None, slice(0,len(data)+2)]
+                        opts = {"palette": self.colors} if resolve_colors else {}
+                        self.styles = KBPStyleCollection.from_textlines([x for x in data if not x.startswith("'")], **opts)
+                    elif line.startswith("'Margins"):
+                        self.parse_margins(kbpLines[x+1])
+                    elif line.startswith("'Other"):
+                        self.parse_other(kbpLines[x+1])
+                    elif line == "'--- Track Information ---":
+                        if template:
+                            return
+                        data = kbpLines[x+1:kbpLines.index(KBPFile.DIVIDER, x+1)]
+                        cursor = [None, slice(0,len(data)+1)]
+                        self.parse_trackinfo(data)
+                        if self.trackinfo["Status"] != '1':
+                            raise NotImplementedError("Tracks must be synced before they can be used with kbputils.")
+
+                elif divider and line == "PAGEV2":
                     data = kbpLines[x+1:kbpLines.index(KBPFile.DIVIDER, x+1)]
-                    self.parse_trackinfo(data)
-                    if self.trackinfo["Status"] != '1':
-                        raise NotImplementedError("Tracks must be synced before they can be used with kbputils.")
+                    cursor = [None, slice(0,len(data)+1)]
+                    opts = {"default_wipe": self.other['wipedetail']} if resolve_wipe else {}
+                    self.pages.append(KBPPage.from_textlines(data, **opts))
 
-            elif divider and line == "PAGEV2":
-                data = kbpLines[x+1:kbpLines.index(KBPFile.DIVIDER, x+1)]
-                opts = {"default_wipe": self.other['wipedetail']} if resolve_wipe else {}
-                self.pages.append(KBPPage.from_textlines(data, **opts))
+                elif divider and line == "IMAGE":
+                    # TODO: Determine if it's ever possible to have multiple image lines in one section
+                    data = kbpLines[x+1]
+                    self.images.append(KBPImage.from_string(data))
 
-            elif divider and line == "IMAGE":
-                # TODO: Determine if it's ever possible to have multiple image lines in one section
-                data = kbpLines[x+1]
-                self.images.append(KBPImage.from_string(data))
+                if divider and line == "HEADERV2":
+                    in_header = True
 
-            if divider and line == "HEADERV2":
-                in_header = True
-
-            if line == KBPFile.DIVIDER:
-                in_header = False
-                divider = True
-            # Ignore empty/comment lines and still consider the previous line to be a divider
-            elif line != "" and not line.startswith("'"):
-                divider = False
+                if line == KBPFile.DIVIDER:
+                    in_header = False
+                    divider = True
+                # Ignore empty/comment lines and still consider the previous line to be a divider
+                elif line != "" and not line.startswith("'"):
+                    divider = False
+            except Exception as e:
+                error = "Failed to parse kbp file:\n"
+                for n, error_line in enumerate(kbpLines[x:][cursor[1]]):
+                    if n == cursor[0]:
+                        error += f">>{n+x+1:6}: {error_line}\n"
+                    else:
+                        error += f"{n+x+1:8}: {error_line}\n"
+                raise ValueError(error) from e
 
         missing = ', '.join(filter(lambda x: not hasattr(self, x), ('colors', 'styles', 'margins', 'other','pages')))
         if missing:
