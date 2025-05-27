@@ -5,10 +5,14 @@ import enum
 import types
 import typing
 import collections
+import re
+import math
 from . import kbp
 from . import validators
 from . import kbs
 from . import kbpfont
+from . import doblontxt
+from . import lrc
 
 class AssAlignment(enum.Enum):
     DEFAULT = 0
@@ -207,6 +211,17 @@ class AssConverter:
     def fade(self) -> str:
         return r"{\fad(%d,%d)}" % (self.options.fade_in, self.options.fade_out)
 
+    # Apply escape sequences needed when converting syllables in .kbp to .ass
+    @staticmethod
+    @validators.validated_types
+    def kbpsyl2ass(syltext: str, firstSyl: bool = False):
+        res = syltext.replace("{~}","/") # Literal / in .kbp, because / itself ends the syllable
+        res = re.sub(r"\\(?=[Nnh])", "\\\u200b", res) # These escapes have special meaning in .ass, so add zero-width char in the middle
+        res = re.sub(r"[{}]", r"\\1", res) # Escape literal {} so not to create a tag
+        if firstSyl:
+            res = re.sub(r"^ ", re.escape(r"\h"), res) # Spaces at the start of a line are ignored in .ass, so insert a \h
+        return res
+
     # Convert a line of syllables into the text of a dialogue event including wipe tags
     @validators.validated_types
     def kbp2asstext(self, line: kbp.KBPLine, pos: AssPosition):
@@ -240,7 +255,7 @@ class AssConverter:
             # Though that scenario shouldn't come up since we are allowing KBPFile to resolve wipedetail
             wipe = r"\k" if s.isprogressive() == False else r"\kf"
 
-            result += r"{%s%d}%s" % (wipe, dur, s.syllable)
+            result += r"{%s%d}%s" % (wipe, dur, self.kbpsyl2ass(s.syllable, n==0))
             cur = s.start + dur
         return result
 
@@ -288,8 +303,8 @@ class AssConverter:
                 line_margins = self.get_line_margins(line, pos)
                 line_style = styles[line.style]
                 result.events.append(ass.Dialogue(
-                    start=datetime.timedelta(milliseconds = line.start * 10 + self.options.offset),
-                    end=datetime.timedelta(milliseconds = line.end * 10 + self.options.offset),
+                    start=datetime.timedelta(milliseconds = max(0, line.start * 10 + self.options.offset)),
+                    end=datetime.timedelta(milliseconds = max(0, line.end * 10 + self.options.offset)),
                     style=AssConverter.ass_style_name(line_style.style_no, line_style.name), # Undefined styles get default style number
                     effect="karaoke",
                     text=self.kbp2asstext(line, pos),
@@ -322,3 +337,187 @@ class AssConverter:
             
         return result
 
+@validators.validated_instantiation(replace="__init__")
+@dataclasses.dataclass
+class DoblonTxtOptions:
+    title: str = ''
+    artist: str = ''
+    audio_file: str = ''
+    comments: str = 'Created with kbputils\nConverted from Doblon .txt file'
+    max_lines_per_page: int = 6
+    min_gap_for_new_page: int = 1000
+    display_before_wipe: int = 1000
+    remove_after_wipe: int = 500
+    template_file: str = ''
+
+    @validators.validated_types
+    @staticmethod
+    def __assert_valid(key: str, value):
+        if key in DoblonTxtOptions._fields:
+            if not isinstance(value, (t := DoblonTxtOptions._fields[key].type)):
+                if callable(t):
+                    value = t(value)
+                # Also try the first type in a union
+                elif hasattr(t, '__args__') and callable(s := t.__args__[0]):
+                    value = s(value)
+            elif not isinstance(value, t):
+                raise TypeError(f"Expected {opt} to be of type {t}. Found {type(options[opt])}.")
+        else:
+            raise TypeError(f"Unexpected field '{key}'. Possible fields are {self._fields.keys()}.")
+
+        return value
+
+    @validators.validated_structures(assert_function=__assert_valid)
+    def update(self, **options):
+        for opt in options:
+            setattr(self, opt, options[opt])
+DoblonTxtOptions._fields = types.MappingProxyType(dict((f.name,f) for f in dataclasses.fields(DoblonTxtOptions)))
+
+class DoblonTxtConverter:
+    @validators.validated_types
+    def __init__(self, doblonTxtFile: doblontxt.DoblonTxt, options: DoblonTxtOptions | types.NoneType = None, **kwargs):
+        self.doblontxt = doblonTxtFile
+        self.options = options or DoblonTxtOptions()
+        self.options.update(**kwargs)
+        self.template = kbp.KBPFile(self.options.template_file, template=True) if self.options.template_file else kbp.KBPFile()
+
+    @staticmethod
+    def syl2kbp(syl: str) -> str:
+        if syl.endswith("-"):
+            syl = syl[:-1]
+        return syl.replace("/", "{~}")
+
+    def kbpFile(self):
+        if hasattr(self, 'kbpfile'):
+            return self.kbpfile
+        self.kbpfile = self.template
+        delattr(self, 'template')
+        if not hasattr(self.kbpfile, 'trackinfo'):
+            self.kbpfile.trackinfo = {'Status': '1', 'Title': self.options.title, 'Artist': self.options.artist, 'Audio': self.options.audio_file, 'BuildFile': '', 'Intro': '', 'Outro': '', 'Comments': self.options.comments}
+
+        # Add empty line to ensure last page is processed
+        self.doblontxt.lines.append([])
+
+        kbplines = []
+        for line in self.doblontxt.lines:
+            if not line or (kbplines and line[0][1] - self.options.display_before_wipe - kbplines[-1].end*10 > self.options.min_gap_for_new_page):
+                if kbplines:
+                    num_pages = math.ceil(len(kbplines) / self.options.max_lines_per_page)
+                    per_page = len(kbplines) // num_pages
+                    additional = len(kbplines) % num_pages
+                    cur = 0
+                    for group in range(num_pages):
+                        nxt = cur + per_page + int(additional > 0)
+                        additional -= 1
+                        page = kbp.KBPPage("", "", kbplines[cur:nxt])
+                        self.kbpfile.pages.append(page)
+                        cur = nxt
+                    kbplines = []
+                if not line:
+                    continue
+            line_header = kbp.KBPLineHeader(
+                align="C",
+                style="A",
+                start=round((line[0][0] - self.options.display_before_wipe)/10),
+                end=round((line[-1][1] + self.options.remove_after_wipe)/10),
+                right=0,
+                down=0,
+                rotation=0
+            ) 
+            kbpline = kbp.KBPLine(line_header, [kbp.KBPSyllable(self.syl2kbp(syl), round(start/10), round(end/10), 0) for start, end, syl in line])
+            kbplines.append(kbpline)
+        return self.kbpfile
+
+# TODO: Combine code for LRC and DoblonTXT converters
+
+@validators.validated_instantiation(replace="__init__")
+@dataclasses.dataclass
+class LRCOptions:
+    title: str = ''
+    artist: str = ''
+    audio_file: str = ''
+    comments: str = 'Created with kbputils\nConverted from Enhanced LRC file'
+    max_lines_per_page: int = 6
+    min_gap_for_new_page: int = 1000
+    display_before_wipe: int = 1000
+    remove_after_wipe: int = 500
+    template_file: str = ''
+
+    @validators.validated_types
+    @staticmethod
+    def __assert_valid(key: str, value):
+        if key in LRCOptions._fields:
+            if not isinstance(value, (t := LRCOptions._fields[key].type)):
+                if callable(t):
+                    value = t(value)
+                # Also try the first type in a union
+                elif hasattr(t, '__args__') and callable(s := t.__args__[0]):
+                    value = s(value)
+            elif not isinstance(value, t):
+                raise TypeError(f"Expected {opt} to be of type {t}. Found {type(options[opt])}.")
+        else:
+            raise TypeError(f"Unexpected field '{key}'. Possible fields are {self._fields.keys()}.")
+
+        return value
+
+    @validators.validated_structures(assert_function=__assert_valid)
+    def update(self, **options):
+        for opt in options:
+            setattr(self, opt, options[opt])
+LRCOptions._fields = types.MappingProxyType(dict((f.name,f) for f in dataclasses.fields(LRCOptions)))
+
+class LRCConverter:
+    @validators.validated_types
+    def __init__(self, lrcFile: lrc.LRC, options: LRCOptions | types.NoneType = None, **kwargs):
+        self.lrc = lrcFile
+        implicitopts = {'ti': 'title', 'ar': 'artist', '#': 'comments'}
+        self.options = options or LRCOptions(**{implicitopts[x]: lrcFile.tags[x] for x in lrcFile.tags if x in implicitopts})
+        self.options.update(**kwargs)
+        self.template = kbp.KBPFile(self.options.template_file, template=True) if self.options.template_file else kbp.KBPFile()
+
+    @staticmethod
+    def syl2kbp(syl: str) -> str:
+        if syl.endswith("-"):
+            syl = syl[:-1]
+        return syl.replace("/", "{~}")
+
+    def kbpFile(self):
+        if hasattr(self, 'kbpfile'):
+            return self.kbpfile
+        self.kbpfile = self.template
+        delattr(self, 'template')
+        if not hasattr(self.kbpfile, 'trackinfo'):
+            self.kbpfile.trackinfo = {'Status': '1', 'Title': self.options.title, 'Artist': self.options.artist, 'Audio': self.options.audio_file, 'BuildFile': '', 'Intro': '', 'Outro': '', 'Comments': self.options.comments}
+
+        # Add empty line to ensure last page is processed
+        self.lrc.lines.append([])
+
+        kbplines = []
+        for line in self.lrc.lines:
+            if not line or (kbplines and line[0][1] - self.options.display_before_wipe - kbplines[-1].end*10 > self.options.min_gap_for_new_page):
+                if kbplines:
+                    num_pages = math.ceil(len(kbplines) / self.options.max_lines_per_page)
+                    per_page = len(kbplines) // num_pages
+                    additional = len(kbplines) % num_pages
+                    cur = 0
+                    for group in range(num_pages):
+                        nxt = cur + per_page + int(additional > 0)
+                        additional -= 1
+                        page = kbp.KBPPage("", "", kbplines[cur:nxt])
+                        self.kbpfile.pages.append(page)
+                        cur = nxt
+                    kbplines = []
+                if not line:
+                    continue
+            line_header = kbp.KBPLineHeader(
+                align="C",
+                style="A",
+                start=round((line[0][0] - self.options.display_before_wipe)/10),
+                end=round((line[-1][1] + self.options.remove_after_wipe)/10),
+                right=0,
+                down=0,
+                rotation=0
+            ) 
+            kbpline = kbp.KBPLine(line_header, [kbp.KBPSyllable(self.syl2kbp(syl), round(start/10), round(end/10), 0) for start, end, syl in line])
+            kbplines.append(kbpline)
+        return self.kbpfile

@@ -7,7 +7,8 @@ authors = [
 description = "Utilities to handle .kbp files created with Karaoke Builder Studio."
 readme = "README.md"
 dependencies = [
-    "ass"
+    "ass",
+    "charset-normalizer"
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
