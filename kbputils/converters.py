@@ -228,19 +228,27 @@ class AssConverter:
         result = str(pos) + self.fade()
         if self.kbpFile.styles[line.style].fixed:
             return result + line.text()
+        if line.start < 0:
+            line = line._replace(start = 0)
         cur = line.start
         for (n, s) in enumerate(line.syllables):
+            if s.start < line.start:
+                s = s._replace(start=line.start)
+            if s.end < s.start:
+                s = s._replace(end=s.start)
             delay = s.start - cur
             dur = s.end - s.start
 
             if delay > 0:
                 # Gap between current position and start of next syllable
                 result += r"{\k%d}" % delay
+                cur += delay
             elif delay < 0:
                 # Playing catchup
                 if self.allow_kt:
                     # Reset time so wipes can overlap (\kt takes a time in centiseconds from line start)
                     result += r"{\kt%d}" % (s.start - line.start)
+                    cur = s.start
                 else:
                     # Shorten syllable to compensate for missing time (keep in mind delay is negative)
                     dur += delay
@@ -251,12 +259,15 @@ class AssConverter:
             if len(line.syllables) > n+1 and line.syllables[n+1].start - s.end == 1:
                 dur += 1
 
+            if dur < 0:
+                dur = 0
+
             # Using == False explicitly because it's technically a tri-state with None meaning undefined
             # Though that scenario shouldn't come up since we are allowing KBPFile to resolve wipedetail
             wipe = r"\k" if s.isprogressive() == False else r"\kf"
 
             result += r"{%s%d}%s" % (wipe, dur, self.kbpsyl2ass(s.syllable, n==0))
-            cur = s.start + dur
+            cur += dur
         return result
 
     @validators.validated_types

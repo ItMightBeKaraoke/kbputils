@@ -583,7 +583,7 @@ class KBPPage(typing.NamedTuple):
         header=None
         transitions=["", ""] # Default line by line
         for x in page_lines:
-            if header is None and re.match(r"[LCR]/[a-zA-Z](/\d+){2}(/-?\d+){3}$", x): # Only last 3 fields can be negative
+            if header is None and re.match(r"[LCR]/[a-zA-Z](/-?\d+){5}$", x): # Only last 3 fields can logically be negative, but KBS allows all
                 fields = x.split("/")
                 fields[2:] = [int(y) for y in fields[2:]]
                 header = KBPLineHeader(**dict(zip(("align", "style", "start", "end", "right", "down", "rotation"), fields)))
