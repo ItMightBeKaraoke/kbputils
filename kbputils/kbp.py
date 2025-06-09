@@ -25,6 +25,7 @@ class KBPFile:
     def __init__(self, kbpFile=None, **kwargs):
         self.pages = []
         self.images = []
+        self.lyrics = [] # Unsynced lyrics
         if kbpFile is None:
             self.colors = KBPPalette("055","FFF","000","E70","940","CFF","033","0DD","077","FCF","303","F3F","818","000","FFF","000")
             self.styles = KBPStyleCollection({1: KBPStyle(style_no=1, name='Default', textcolor=1, outlinecolor=2, textwipecolor=3, outlinewipecolor=4, fontname='Arial', fontsize=12, fontstyle='B', charset=0, outlines=[2, 2, 2, 2], shadows=[0, 0], wipestyle=0, allcaps='L', fixed=False), 2: KBPStyle(style_no=2, name='Male', textcolor=5, outlinecolor=6, textwipecolor=7, outlinewipecolor=8, fontname='Arial', fontsize=12, fontstyle='B', charset=0, outlines=[2, 2, 2, 2], shadows=[0, 0], wipestyle=0, allcaps='L', fixed=False), 3: KBPStyle(style_no=3, name='Female', textcolor=9, outlinecolor=10, textwipecolor=11, outlinewipecolor=12, fontname='Arial', fontsize=12, fontstyle='B', charset=0, outlines=[2, 2, 2, 2], shadows=[0, 0], wipestyle=0, allcaps='L', fixed=False), 4: KBPStyle(style_no=4, name='Other', textcolor=4, outlinecolor=8, textwipecolor=12, outlinewipecolor=14, fontname='Arial', fontsize=12, fontstyle='B', charset=0, outlines=[2, 2, 2, 2], shadows=[0, 0], wipestyle=0, allcaps='L', fixed=False)})
@@ -42,11 +43,16 @@ class KBPFile:
 
     def parse(self, kbpLines, resolve_colors=False, resolve_wipe=True, template=None):
         in_header = False
+        top_section = True
         divider = False
-        for x, line in enumerate(kbpLines):
-            cursor = [1, slice(0,2)]
+        status = None
+        x = 0
+        while x < len(kbpLines):
+            line = kbpLines[x]
+            cursor = [0, slice(0,1)]
             try:
-                if in_header:
+                if not line == KBPFile.DIVIDER and in_header:
+                    cursor = [1, slice(0,2)]
                     if line.startswith("'Palette Colours"):
                         self.colors = KBPPalette.from_string(kbpLines[x+1])
                     elif line.startswith("'Styles"):
@@ -64,29 +70,53 @@ class KBPFile:
                         data = kbpLines[x+1:kbpLines.index(KBPFile.DIVIDER, x+1)]
                         cursor = [None, slice(0,len(data)+1)]
                         self.parse_trackinfo(data)
-                        if self.trackinfo["Status"] != '1':
-                            raise NotImplementedError("Tracks must be synced before they can be used with kbputils.")
+                        status = self.trackinfo["Status"]
+                    elif line == '' or line.startswith("'"):
+                        cursor = [1, slice(0,1)]
+                    else:
+                        raise ValueError("Unexpected header line")
 
-                elif divider and line == "PAGEV2":
+
+                # Only accept lyrics instead of pages if unsynced
+                elif divider and status == '0' and line == "LYRICSV2":
+                    data = kbpLines[x+1:]
+                    self.lyrics = data
+                    cursor = [None, slice(0,len(data)+1)]
+
+                elif divider and status == '1' and line == "PAGEV2":
                     data = kbpLines[x+1:kbpLines.index(KBPFile.DIVIDER, x+1)]
                     cursor = [None, slice(0,len(data)+1)]
                     opts = {"default_wipe": self.other['wipedetail']} if resolve_wipe else {}
                     self.pages.append(KBPPage.from_textlines(data, **opts))
 
+                elif divider and line in ('PAGEV2', 'LYRICSV2'):
+                    raise ValueError(f"Incorrect lyric sync state found, expected {"synced" if self.trackinfo["Status"] == '1' else "unsynced"}")
+
                 elif divider and line == "IMAGE":
                     # TODO: Determine if it's ever possible to have multiple image lines in one section
+                    cursor = [1, slice(0,2)]
                     data = kbpLines[x+1]
                     self.images.append(KBPImage.from_string(data))
 
-                if divider and line == "HEADERV2":
+                elif divider and line == "HEADERV2":
                     in_header = True
+                    top_section = False
 
-                if line == KBPFile.DIVIDER:
+                elif line == KBPFile.DIVIDER:
                     in_header = False
                     divider = True
+
+                # Allow anything before the HEADERv2 (the section that usually has the software name and website)
+                # Other than that, every non-comment/empty line should be accounted for
+                elif line  != "" and not line.startswith("'") and not top_section:
+                    raise ValueError("Unknown section header")
+
                 # Ignore empty/comment lines and still consider the previous line to be a divider
-                elif line != "" and not line.startswith("'"):
+                if line != KBPFile.DIVIDER and line != "" and not line.startswith("'"):
                     divider = False
+                 
+                x += cursor[1].stop
+
             except Exception as e:
                 error = "Failed to parse kbp file:\n"
                 for n, error_line in enumerate(kbpLines[x:][cursor[1]]):
@@ -183,13 +213,19 @@ class KBPFile:
             #kbpFile.write("\n".join(f"""{'\n' if x == 'Comments' else ''}{x:<10}{
             #    ('\n' + ' ' * 10).join(self.trackinfo[x].split('\n'))
             #}""" for x in self.trackinfo) + "\n\n")
-            for page in self.pages:
-                kbpFile.write(page.toKBP())
-            for image in self.images:
-                kbpFile.write(image.toKBP())
-        # else template
-
-        kbpFile.write(KBPFile.DIVIDER + "\n\n")
+            if self.trackinfo['Status'] == '1':
+                for page in self.pages:
+                    kbpFile.write(page.toKBP())
+                for image in self.images:
+                    kbpFile.write(image.toKBP())
+                kbpFile.write(KBPFile.DIVIDER + "\n\n")
+            else:
+                kbpFile.write(KBPFile.DIVIDER + "\n")
+                kbpFile.write("LYRICSV2\n")
+                for line in self.lyrics:
+                    kbpFile.write(line + "\n")
+        else:
+            kbpFile.write(KBPFile.DIVIDER + "\n\n")
 
         if needsclosed:
             kbpFile.close()
