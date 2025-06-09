@@ -72,8 +72,9 @@ class KBPFile:
                         self.parse_trackinfo(data)
                         status = self.trackinfo["Status"]
                     elif line == '' or line.startswith("'"):
-                        cursor = [1, slice(0,1)]
+                        cursor = [0, slice(0,1)]
                     else:
+                        cursor = [0, slice(0,1)]
                         raise ValueError("Unexpected header line")
 
 
