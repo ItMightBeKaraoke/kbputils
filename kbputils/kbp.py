@@ -5,7 +5,27 @@ import typing
 import io
 import warnings
 import os.path
+import enum
 from . import validators
+
+@enum.unique
+class KBPErrorCode(enum.Enum):
+    # KBPLine
+    NegativeLineStart = enum.auto()
+    NegativeLineEnd = enum.auto()
+    LineStyleMissing = enum.auto()
+    # KBPSyllable
+    WipeStartBeforeLine = enum.auto()
+    WipeEndAfterLine = enum.auto()
+    ZeroWipeTiming = enum.auto()
+
+@validators.validated_instantiation
+class KBPErrorDetails(typing.NamedTuple):
+    error: KBPErrorCode
+    page: int
+    line: int
+    syllable: int | None = None
+    value: int | None = None
 
 class KBPFile:
 
@@ -231,6 +251,15 @@ class KBPFile:
         if needsclosed:
             kbpFile.close()
 
+    # There are several ways a syntactically valid KBP file may not work in practice. This will attempt to report on these logic errors
+    def logicallyValidate(self) -> typing.List[KBPErrorDetails]:
+        result = []
+        for p, page in enumerate(self.pages):
+            for l, line in enumerate(page.lines):
+                result.extend(line.logicallyValidate(p, l, self.styles))
+        return result
+
+
 # I didn't want to use a list because it can't have specific size, and liked
 # all the data being tuple-compatible, but still wanted list-like access with [].
 # There are modules that make something like a "frozen" list, but I didn't want
@@ -268,83 +297,6 @@ class KBPPalette(collections.namedtuple("KBPPalette", tuple(range(16)), rename=T
 
     def as_rgba32(self):
         return [x+"FF" for x in self.as_rgb24()]
-
-@validators.validated_instantiation
-class KBPLineHeader(typing.NamedTuple):
-    align: str
-    style: str
-    start: int
-    end: int
-    right: int
-    down: int
-    rotation: int
-
-    def isfixed(self):
-        return self.style.islower()
-
-    def toKBP(self):
-        return "/".join(str(x) for x in self)
-
-@validators.validated_instantiation
-class KBPSyllable(typing.NamedTuple):
-    syllable: str
-    start: int
-    end: int
-    wipe: int
-
-    def isempty(self):
-        return self.syllable == ""
-
-    def isprogressive(self):
-        # Zero means unresolved default wipe, so result is undefined. Otherwise
-        # everything less than 5 is progressive with varying level of wipe detail
-        return None if self.wipe == 0 else (self.wipe < 5)
-
-    def toKBP(self):
-        return f"{self.syllable + '/':<15}" + "/".join(str(x) for x in self[1:])
-
-class KBPLine(typing.NamedTuple):
-    header: KBPLineHeader
-    syllables: list
-
-    # There's only one header, so may as well pass anything unresolved down to it
-    def __getattr__(self, attr):
-        return getattr(self.header, attr)
-
-    # These will just return "can't set" errors since it's immutable, but that
-    # makes more sense than "has no attribute"
-    def __setattr__(self, attr, val):
-        return setattr(self.header, attr, val)
-
-    def text(self, syllable_separator="", space_is_separator=False):
-
-        # Special case for empty lines because when importing lyrics into KBS,
-        # a syllable separator by itself is used to denote an empty line (as
-        # opposed to a page break)
-        if self.isempty():
-            return syllable_separator
-
-        # When space is considered a separator, underscore is used to represent
-        # a non-splitting space
-        elif space_is_separator and syllable_separator != "":
-            result = ""
-            for syl in self.syllables:
-                syltext = syl.syllable
-                syltext = re.sub(r"( +)(?=[^ ])", lambda m: "_" * len(m.group(1)), syltext)
-                result += syltext
-                if not syltext.endswith(" "):
-                    result += syllable_separator
-            return result[:-len(syllable_separator)]
-
-        # Basic case - output syllables split only by the separator character(s)
-        else:
-            return syllable_separator.join(x.syllable for x in self.syllables)
-
-    def isempty(self):
-        return not self.syllables or (len(self.syllables) == 1 and self.syllables[0].isempty())
-
-    def toKBP(self):
-        return "\n".join((self.header.toKBP(), *(x.toKBP() for x in self.syllables))) + "\n"
 
 @validators.validated_instantiation
 class KBPStyle(typing.NamedTuple):
@@ -569,6 +521,128 @@ class KBPStyleCollection(dict):
     def toKBP(self):
         return KBPStyleCollection.HEADER + "".join(x.toKBP() for x in self.values() if x.style_no > 0) + "  StyleEnd\n\n"
         
+
+@validators.validated_instantiation
+class KBPLineHeader(typing.NamedTuple):
+    align: str
+    style: str
+    start: int
+    end: int
+    right: int
+    down: int
+    rotation: int
+
+    def isfixed(self):
+        return self.style.islower()
+
+    def toKBP(self):
+        return "/".join(str(x) for x in self)
+
+@validators.validated_instantiation
+class KBPSyllable(typing.NamedTuple):
+    syllable: str
+    start: int
+    end: int
+    wipe: int
+
+    def isempty(self):
+        return self.syllable == ""
+
+    def isprogressive(self):
+        # Zero means unresolved default wipe, so result is undefined. Otherwise
+        # everything less than 5 is progressive with varying level of wipe detail
+        return None if self.wipe == 0 else (self.wipe < 5)
+
+    def toKBP(self):
+        return f"{self.syllable + '/':<15}" + "/".join(str(x) for x in self[1:])
+
+class KBPLine(typing.NamedTuple):
+    header: KBPLineHeader
+    syllables: list
+
+    # There's only one header, so may as well pass anything unresolved down to it
+    def __getattr__(self, attr):
+        return getattr(self.header, attr)
+
+    # These will just return "can't set" errors since it's immutable, but that
+    # makes more sense than "has no attribute"
+    def __setattr__(self, attr, val):
+        return setattr(self.header, attr, val)
+
+    def text(self, syllable_separator="", space_is_separator=False):
+
+        # Special case for empty lines because when importing lyrics into KBS,
+        # a syllable separator by itself is used to denote an empty line (as
+        # opposed to a page break)
+        if self.isempty():
+            return syllable_separator
+
+        # When space is considered a separator, underscore is used to represent
+        # a non-splitting space
+        elif space_is_separator and syllable_separator != "":
+            result = ""
+            for syl in self.syllables:
+                syltext = syl.syllable
+                syltext = re.sub(r"( +)(?=[^ ])", lambda m: "_" * len(m.group(1)), syltext)
+                result += syltext
+                if not syltext.endswith(" "):
+                    result += syllable_separator
+            return result[:-len(syllable_separator)]
+
+        # Basic case - output syllables split only by the separator character(s)
+        else:
+            return syllable_separator.join(x.syllable for x in self.syllables)
+
+    def isempty(self):
+        return not self.syllables or (len(self.syllables) == 1 and self.syllables[0].isempty())
+
+    def toKBP(self):
+        return "\n".join((self.header.toKBP(), *(x.toKBP() for x in self.syllables))) + "\n"
+
+    def logicallyValidate(self, page_no: int, line_no: int, styles: KBPStyleCollection) -> typing.List[KBPErrorDetails]:
+        result = []
+        if self.start < 0:
+            result.append(KBPErrorDetails(
+                error=KBPErrorCode.NegativeLineStart,
+                page=page_no,
+                line=line_no,
+                value=self.start
+            ))
+        if self.end < 0:
+            result.append(KBPErrorDetails(
+                error=KBPErrorCode.NegativeLineEnd,
+                page=page_no,
+                line=line_no,
+                value=self.end
+            ))
+        # If the style does not exist in the style collection, it will default but also switch to the default's style_no
+        if (style_no := KBPStyleCollection.alpha2key(self.style)) != styles[self.style].style_no:
+            result.append(KBPErrorDetails(
+                error=KBPErrorCode.LineStyleMissing,
+                page=page_no,
+                line=line_no,
+                value=abs(style_no)
+            ))
+        for s, syl in enumerate(self.syllables):
+            if syl.start < self.start:
+                result.append(KBPErrorDetails(
+                    error=KBPErrorCode.WipeStartBeforeLine,
+                    page=page_no,
+                    line=line_no,
+                    syllable=s,
+                    value=syl.start - self.start
+                ))
+            if syl.end > self.end:
+                result.append(KBPErrorDetails(
+                    error=KBPErrorCode.WipeEndAfterLine,
+                    page=page_no,
+                    line=line_no,
+                    syllable=s,
+                    value=syl.end - self.end
+                ))
+        return result
+
+
 
 @validators.validated_instantiation
 class KBPPage(typing.NamedTuple):
