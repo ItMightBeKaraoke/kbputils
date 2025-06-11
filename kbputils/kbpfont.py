@@ -22,7 +22,6 @@ font_info = {
 # TODO: object with spacing property
 #def spacing(font, size, bold=False):
 def spacing(style):
-    global __warned__
     font = style.fontname
     size = style.fontsize
     bold = 'B' in style.fontstyle
