@@ -9,6 +9,11 @@ import io
 import sys
 import collections
 
+@dataclasses.dataclass
+class KBPInputOptions:
+    tolerant_parsing: bool = False # Automatically fix syntax errors in .kbp file if they have an unambiguous interpretation
+
+
 def convert_file():
     parser = argparse.ArgumentParser(prog='KBPUtils', description="Various utilities for .kbp files", argument_default=argparse.SUPPRESS)
 
@@ -19,6 +24,7 @@ def convert_file():
                 'argument_default': argparse.SUPPRESS
             },
             'input': kbp.KBPFile,
+            'input_options': KBPInputOptions,
             'output': lambda source, args, dest: converters.AssConverter(source, **vars(args)).ass_document().dump_file(dest),
             'output_opts': {
                 'encoding': 'utf_8_sig'
@@ -58,7 +64,9 @@ def convert_file():
     for p in parser_data:
         cur = subparsers.add_parser(p, **parser_data[p]['add_parser'])
 
-        for field in dataclasses.fields(parser_data[p]['options']):
+        for field in dataclasses.fields(parser_data[p]['options']) + (
+                dataclasses.fields(parser_data[p]['input_options']) if 'input_options' in parser_data[p] else ()
+        ):
             name = field.name.replace("_", "-")
 
             additional_params = {}
@@ -86,8 +94,15 @@ def convert_file():
 
     args = parser.parse_args()
     subparser = args.subparser
+    input_options = {}
+    if 'input_options' in parser_data[subparser]:
+        for field in dataclasses.fields(parser_data[subparser]['input_options']):
+            if not hasattr(args, field.name):
+                continue
+            input_options[field.name] = getattr(args, field.name)
+            delattr(args, field.name)
     del args.subparser
-    source = parser_data[subparser]['input'](sys.stdin if args.source_file == "-" else args.source_file)
+    source = parser_data[subparser]['input'](sys.stdin if args.source_file == "-" else args.source_file, **input_options)
     del args.source_file
     dest = open(args.dest_file, 'w', **parser_data[subparser]['output_opts']) if hasattr(args, 'dest_file') else sys.stdout
     if hasattr(args, 'dest_file'):

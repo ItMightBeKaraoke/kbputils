@@ -57,11 +57,11 @@ class KBPFile:
             self.filename = kbpFile
             kbpFile = open(kbpFile, "r", encoding="utf-8")
             needsclosed = True
-        self.parse([x.rstrip() for x in kbpFile.readlines()], **kwargs)
+        self.parse([x.rstrip("\r\n") for x in kbpFile.readlines()], **kwargs)
         if needsclosed:
             kbpFile.close()
 
-    def parse(self, kbpLines, resolve_colors=False, resolve_wipe=True, template=None):
+    def parse(self, kbpLines, resolve_colors=False, resolve_wipe=True, template=None, tolerant_parsing=False):
         in_header = False
         top_section = True
         divider = False
@@ -108,7 +108,7 @@ class KBPFile:
                     data = kbpLines[x+1:kbpLines.index(KBPFile.DIVIDER, x+1)]
                     cursor = [None, slice(0,len(data)+1)]
                     opts = {"default_wipe": self.other['wipedetail']} if resolve_wipe else {}
-                    self.pages.append(KBPPage.from_textlines(data, **opts))
+                    self.pages.append(KBPPage.from_textlines(data, **opts, tolerant=tolerant_parsing))
 
                 elif divider and line in ('PAGEV2', 'LYRICSV2'):
                     raise ValueError(f"Incorrect lyric sync state found, expected {"synced" if self.trackinfo["Status"] == '1' else "unsynced"}")
@@ -651,11 +651,13 @@ class KBPPage(typing.NamedTuple):
     lines: list
 
     @staticmethod
-    def from_textlines(page_lines, default_wipe = None):
+    def from_textlines(page_lines, default_wipe = None, tolerant=False):
         lines=[]
         syllables=[]
         header=None
         transitions=["", ""] # Default line by line
+        if tolerant:
+            partial_syllable = []
         for x in page_lines:
             if header is None and re.match(r"[LCR]/[a-zA-Z](/-?\d+){5}$", x): # Only last 3 fields can logically be negative, but KBS allows all
                 fields = x.split("/")
@@ -670,6 +672,23 @@ class KBPPage(typing.NamedTuple):
                 transitions = x.split('/')[1:]
             elif x != "":
                 fields = x.split("/")
+
+                # Sometimes kbp files are corrupt in such a way that a syllable line split into two
+                # This combines them back together into a valid line
+                # E.g.
+                #    Foo/     123/456/0
+                # Could have become
+                #    Foo
+                #    /     123/456/0
+                # Note that the second of these would be a syntactically-valid empty syllable on its own,
+                # but since it follows an incomplete line, it is combined into it, and the empty field is removed
+                if tolerant:
+                    partial_syllable.extend(fields if fields[0] or not partial_syllable else fields[1:])
+                    if len(partial_syllable) < 4:
+                        continue
+                    else:
+                        fields, partial_syllable = partial_syllable, []
+
                 fields[0] = re.sub(r"{-}", "/", fields[0]) # This field uses this as a surrogate for / since that denotes end of syllable
                 fields[1] = fields[1].lstrip() # Only the second field should have extra spaces
                 fields[1:] = [int(y) for y in fields[1:]]
