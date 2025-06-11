@@ -60,20 +60,20 @@ class AssOverflow(enum.Enum):
 class AssOptions:
     #position: bool
     #wipe: bool
-    border: bool = True # Add CDG-style borders to margins
+    border: bool = dataclasses.field(default=True, metadata={"doc": "Add CDG-style borders to margins"})
     #display: int
     #remove: int
-    float_font: bool = True # Allow floating point in output font sizes (well-supported)
-    float_pos: bool = False # Allow floating point in \pos and margins (supported by recent libass)
-    target_x: int = 300 # Output resolution
-    target_y: int = 216
-    fade_in: int = 300 # Fade duration for line display/remove
-    fade_out: int = 200
-    transparency: bool = True
-    offset: int | bool = True # False = disable offset (same as 0), True = pull from KBS config, int is offset in ms
-    overflow: AssOverflow = AssOverflow.EVEN_SPLIT
-    allow_kt: bool = False # Use \kt if there are overlapping wipes on the same line (not supported by all ass implementations)
-    experimental_spacing: bool = False # Calculate the "style 1" spacing instead of using Arial 12 bold default (only works for select fonts)
+    float_font: bool = dataclasses.field(default=True, metadata={"doc": "Use floating point in output font sizes (well-supported in renderers)"})
+    float_pos: bool = dataclasses.field(default=False, metadata={"doc": "Use floating point in \\pos and margins (supported by recent libass)"})
+    target_x: int = dataclasses.field(default=300, metadata={"doc": "Output width"})
+    target_y: int = dataclasses.field(default=216, metadata={"doc": "Output height"})
+    fade_in: int = dataclasses.field(default=300, metadata={"doc": "Fade duration for line display (ms)"})
+    fade_out: int = dataclasses.field(default=200, metadata={"doc": "Fade duration for line removal (ms)"})
+    transparency: bool = dataclasses.field(default=True, metadata={"doc": "Treat palette index 1 as transparent"})
+    offset: int | bool = dataclasses.field(default=True, metadata={"doc": "How to handle KBS offset. False => disable offset (same as 0), True => pull from KBS config, int is offset in ms"})
+    overflow: AssOverflow = dataclasses.field(default=AssOverflow.EVEN_SPLIT, metadata={"doc": "How to handle lines wider than the screen"})
+    allow_kt: bool = dataclasses.field(default=False, metadata={"doc": "Use \kt if there are overlapping wipes on the same line (not supported by all ass implementations)"})
+    experimental_spacing: bool = dataclasses.field(default=False, metadata={"doc": 'Calculate the "style 1" spacing instead of using Arial 12 bold default (only works for select fonts)'})
     #overflow_spacing: float # TODO? spacing value in styles that will apply for overflow (default 0). Multiplied by font height or based on default style?
 
     @validators.validated_types

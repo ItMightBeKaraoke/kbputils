@@ -9,13 +9,44 @@ import io
 import sys
 import collections
 
+# Shows a usage message for the main command and all subcommands.
+# Requires an attribute added_subparsers since ArgumentParser normally
+# doesn't provide an API for retrieving them and would require something
+# unreliable like this:
+# added_subparsers = parser._subparsers._name_parser_map.values()
+class _UsageAllAction(argparse.Action):
+    def __init__(self,
+         option_strings,
+         dest=argparse.SUPPRESS,
+         default=argparse.SUPPRESS,
+         help=None,
+         deprecated=False):
+        super().__init__(
+            option_strings=option_strings,
+            dest=dest,
+            default=default,
+            nargs=0,
+            help=help,
+            deprecated=deprecated)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        print(parser.format_usage())
+        for p in parser.added_subparsers:
+            print(p.format_usage())
+        parser.exit()
+
 @dataclasses.dataclass
 class KBPInputOptions:
     tolerant_parsing: bool = False # Automatically fix syntax errors in .kbp file if they have an unambiguous interpretation
 
 
 def convert_file():
-    parser = argparse.ArgumentParser(prog='KBPUtils', description="Various utilities for .kbp files", argument_default=argparse.SUPPRESS)
+    parser = argparse.ArgumentParser(
+            prog='KBPUtils',
+            description="Various utilities for .kbp files",
+            epilog=f"Each utility has its own help, e.g. KBPUtils kbp2ass --help",
+            argument_default=argparse.SUPPRESS,
+        )
 
     parser_data = {
         'kbp2ass': {
@@ -59,10 +90,18 @@ def convert_file():
         }
     }
 
+    parser.add_argument("--version", "-V", action="version", version=__version__)
+
     subparsers = parser.add_subparsers(dest='subparser', required=True)
+
+    # See _UsageAllAction
+    parser.added_subparsers = []
+    parser.register('action', 'usage_all', _UsageAllAction)
+    parser.add_argument("--usage-all", action='usage_all', help = "show usage for all subcommands and exit")
 
     for p in parser_data:
         cur = subparsers.add_parser(p, **parser_data[p]['add_parser'])
+        parser.added_subparsers.append(cur)
 
         for field in dataclasses.fields(parser_data[p]['options']) + (
                 dataclasses.fields(parser_data[p]['input_options']) if 'input_options' in parser_data[p] else ()
@@ -79,20 +118,30 @@ def convert_file():
             else:
                 additional_params["type"] = field.type
 
+            help_text = ''
+            if 'doc' in field.metadata:
+                help_text += field.metadata['doc']
+            elif hasattr(field.type, '__name__'):
+                help_text += field.type.__name__
+            else:
+                help_text += repr(field.type)
+            help_text += f" (default: {field.default})"
+
             cur.add_argument(
                 f"--{name}",
                 gen_shortopt(p, name),
                 dest = field.name,
-                help = (field.type.__name__ if hasattr(field.type, '__name__') else repr(field.type)) + f" (default: {field.default})",
+                #help = (field.type.__name__ if hasattr(field.type, '__name__') else repr(field.type)) + f" (default: {field.default})",
+                help = help_text,
                 action = argparse.BooleanOptionalAction if field.type == bool else 'store',
                 **additional_params,
             )
 
-        cur.add_argument("--version", "-V", action="version", version=__version__)
         cur.add_argument("source_file")
         cur.add_argument("dest_file", nargs='?')
 
     args = parser.parse_args()
+
     subparser = args.subparser
     input_options = {}
     if 'input_options' in parser_data[subparser]:
