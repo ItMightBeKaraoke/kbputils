@@ -37,7 +37,7 @@ class _UsageAllAction(argparse.Action):
 
 @dataclasses.dataclass
 class KBPInputOptions:
-    tolerant_parsing: bool = False # Automatically fix syntax errors in .kbp file if they have an unambiguous interpretation
+    tolerant_parsing: bool = dataclasses.field(default=False, metadata={'doc': "Automatically fix syntax errors in .kbp file if they have an unambiguous interpretation"})
 
 
 def convert_file():
