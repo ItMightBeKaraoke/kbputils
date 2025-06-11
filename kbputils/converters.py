@@ -73,7 +73,7 @@ class AssOptions:
     offset: int | bool = True # False = disable offset (same as 0), True = pull from KBS config, int is offset in ms
     overflow: AssOverflow = AssOverflow.EVEN_SPLIT
     allow_kt: bool = False # Use \kt if there are overlapping wipes on the same line (not supported by all ass implementations)
-    experimental_spacing: bool = False
+    experimental_spacing: bool = False # Calculate the "style 1" spacing instead of using Arial 12 bold default (only works for select fonts)
     #overflow_spacing: float # TODO? spacing value in styles that will apply for overflow (default 0). Multiplied by font height or based on default style?
 
     @validators.validated_types
