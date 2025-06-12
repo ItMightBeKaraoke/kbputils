@@ -87,7 +87,19 @@ def convert_file():
                 'newline': '\r\n'
             },
             'options': converters.LRCOptions
-        }
+        },
+        'kbpcheck': {
+            'add_parser': {
+                'description': 'Discover logic errors in kbp files',
+                'argument_default': argparse.SUPPRESS
+            },
+            'input': kbp.KBPFile,
+            'input_options': KBPInputOptions,
+            # TODO: Output CLI-friendly report rather than data structure
+            'output': lambda source, args, dest: dest.write(repr(source.logicallyValidate())),
+            'output_opts': {},
+            #'options': 
+        },
     }
 
     parser.add_argument("--version", "-V", action="version", version=__version__)
@@ -103,9 +115,11 @@ def convert_file():
         cur = subparsers.add_parser(p, **parser_data[p]['add_parser'])
         parser.added_subparsers.append(cur)
 
-        for field in dataclasses.fields(parser_data[p]['options']) + (
+        for field in (
+                dataclasses.fields(parser_data[p]['options']) if 'options' in parser_data[p] else ()
+            ) + (
                 dataclasses.fields(parser_data[p]['input_options']) if 'input_options' in parser_data[p] else ()
-        ):
+            ):
             name = field.name.replace("_", "-")
 
             additional_params = {}

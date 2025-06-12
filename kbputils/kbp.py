@@ -265,6 +265,7 @@ class KBPFile:
     # There are several ways a syntactically valid KBP file may not work in practice. This will attempt to report on these logic errors
     def logicallyValidate(self) -> typing.List[KBPErrorDetails]:
         result = []
+        # TODO: Count from 1 to match user expectation or handle that in output?
         for p, page in enumerate(self.pages):
             for l, line in enumerate(page.lines):
                 result.extend(line.logicallyValidate(p, l, self.styles))
