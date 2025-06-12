@@ -75,11 +75,11 @@ class KBPFile:
                     cursor = [1, slice(0,2)]
                     if line.startswith("'Palette Colours"):
                         self.colors = KBPPalette.from_string(kbpLines[x+1])
-                    elif line.startswith("'Styles"):
-                        data = kbpLines[x+1:kbpLines.index("  StyleEnd", x+1)]
-                        cursor = [None, slice(0,len(data)+2)]
+                    elif line.startswith("  Style"):
+                        data = kbpLines[x:kbpLines.index("  StyleEnd", x+1)]
+                        cursor = [None, slice(0,len(data)+1)]
                         opts = {"palette": self.colors} if resolve_colors else {}
-                        self.styles = KBPStyleCollection.from_textlines([x for x in data if not x.startswith("'")], **opts)
+                        self.styles = KBPStyleCollection.from_textlines(data, **opts)
                     elif line.startswith("'Margins"):
                         self.parse_margins(kbpLines[x+1])
                     elif line.startswith("'Other"):
@@ -104,9 +104,10 @@ class KBPFile:
                     self.lyrics = data
                     cursor = [None, slice(0,len(data)+1)]
 
+                # TODO: For things like this that send lines starting from x+1, receiving function shouldn't need to know to add 1 to line number
                 elif divider and status == '1' and line == "PAGEV2":
                     data = kbpLines[x+1:kbpLines.index(KBPFile.DIVIDER, x+1)]
-                    cursor = [None, slice(0,len(data)+1)]
+                    cursor = [None, slice(1,len(data)+1)]
                     opts = {"default_wipe": self.other['wipedetail']} if resolve_wipe else {}
                     self.pages.append(KBPPage.from_textlines(data, **opts, tolerant=tolerant_parsing))
 
@@ -140,8 +141,18 @@ class KBPFile:
 
             except Exception as e:
                 error = "Failed to parse kbp file:\n"
-                for n, error_line in enumerate(kbpLines[x:][cursor[1]]):
-                    if n == cursor[0]:
+                if hasattr(e, 'line'):
+                    cursor[0] = e.line
+                if hasattr(e, 'range'):
+                    cursor[1] = slice(cursor[1].start + e.range.start, cursor[1].start + e.range.stop)
+                    if cursor[0] is not None:
+                        cursor[0] -= e.range.start
+                if cursor[0] is not None and cursor[1].stop - cursor[1].start > 8:
+                    curline = cursor[1].start + cursor[0]
+                    cursor[1] = slice(max(curline-4,0), curline+4)
+                    cursor[0] = curline - cursor[1].start
+                for n, error_line in enumerate(kbpLines[x:][cursor[1]],start=cursor[1].start):
+                    if cursor[0] is not None and n == cursor[0] + cursor[1].start:
                         error += f">>{n+x+1:6}: {error_line}\n"
                     else:
                         error += f"{n+x+1:8}: {error_line}\n"
@@ -316,6 +327,18 @@ class KBPStyle(typing.NamedTuple):
     allcaps: str
     fixed: bool
 
+    # TODO: maybe have validated_instantiation take an argument to have a value validator
+    @staticmethod
+    def from_untrusted(**kwargs):
+        for x in ('textcolor', 'outlinecolor', 'textwipecolor', 'outlinewipecolor'):
+            assert 0 <= kwargs[x] <= 15 if isinstance(kwargs[x], int) else re.match(r"[0-9A-F]{3}$",kwargs[x])
+        assert len(kwargs['outlines']) == 4 and all(isinstance(x, int) and x >= 0 for x in kwargs['outlines'])
+        assert len(kwargs['shadows']) == 2 and all(isinstance(x, int) and x >= 0 for x in kwargs['shadows'])
+        assert kwargs['wipestyle'] >= 0
+        assert kwargs['allcaps'] in "LU"
+        assert all(x in "BIUS" for x in kwargs['fontstyle'])
+        return KBPStyle(**kwargs)
+
     def has_colors(self):
         fields = ("textcolor", "outlinecolor", "textwipecolor", "outlinewipecolor")
         if all(isinstance(getattr(self,x), str) for x in fields):
@@ -356,6 +379,14 @@ class KBPStyle(typing.NamedTuple):
             ",".join(tmp[6:10]),
             ",".join(tuple(str(x) for x in self.outlines) + tuple(str(x) for x in self.shadows) + tmp[12:14])
         )) + "\n\n"
+
+class KBPStyleParseError(ValueError):
+    def __init__(self, *args, **kwargs):
+        if 'line' in kwargs:
+            self.line = kwargs.pop('line')
+        if 'range' in kwargs:
+            self.range = kwargs.pop('range')
+        super().__init__(*args, **kwargs)
 
 class KBPStyleCollection(dict):
     __slots__ = ()
@@ -449,32 +480,49 @@ class KBPStyleCollection(dict):
         styles = KBPStyleCollection()
         fields = {}
         style_no = None
-        for n, line in enumerate(style_lines):
-            line = line.lstrip()
-            if line == "" and style_no is not None:
-                style_no = None
-                fields = {}
-            elif style_no is None and line.startswith("Style"):
-                tmp = line.split(",")
-                style_no = int(tmp[0][5:]) + 1
-                fields['style_no'] = style_no
-                tmp = [tmp[1], *(int(x) for x in tmp[2:])]
-                fields.update(dict(zip(("name", "textcolor", "outlinecolor", "textwipecolor", "outlinewipecolor"),tmp)))
-                tmp = style_lines[n+1].lstrip().split(",")
-                tmp[1] = int(tmp[1])
-                tmp[3] = int(tmp[3])
-                fields.update(dict(zip(("fontname", "fontsize", "fontstyle", "charset"),tmp)))
-                tmp = style_lines[n+2].lstrip().split(",")
-                tmp[:-1] = [int(x) for x in tmp[:-1]]
-                fields.update(dict(zip(("outlines", "shadows", "wipestyle", "allcaps", "fixed"),(tmp[:4],tmp[4:6],tmp[6],tmp[7],False))))
-                result = KBPStyle(**fields)
-                if palette:
-                    result = result.resolve_colors(palette)
-                # Adding 1 to style for 2 reasons:
-                # - Style 0/A is shown in the KBS UI as 01
-                # - It allows indexing fixed styles as negative numbers
-                styles[style_no] = result
-            # else second/third line of styles already processed
+        #for n, line in enumerate(style_lines):
+        n=0
+        while n < len(style_lines):
+            line = style_lines[n]
+            parsing_lines = True
+            try:
+                line = line.lstrip()
+                if line == "" and style_no is not None:
+                    style_no = None
+                    fields = {}
+                    n += 1
+                elif style_no is None and line.startswith("Style"):
+                    tmp = line.split(",")
+                    style_no = int(tmp[0][5:]) + 1
+                    fields['style_no'] = style_no
+                    tmp = [tmp[1], *(int(x) for x in tmp[2:])]
+                    fields.update(dict(zip(("name", "textcolor", "outlinecolor", "textwipecolor", "outlinewipecolor"),tmp)))
+                    n += 1
+                    tmp = style_lines[n].lstrip().split(",")
+                    tmp[1] = int(tmp[1])
+                    tmp[3] = int(tmp[3])
+                    fields.update(dict(zip(("fontname", "fontsize", "fontstyle", "charset"),tmp)))
+                    n += 1
+                    tmp = style_lines[n].lstrip().split(",")
+                    tmp[:-1] = [int(x) for x in tmp[:-1]]
+                    fields.update(dict(zip(("outlines", "shadows", "wipestyle", "allcaps", "fixed"),(tmp[:4],tmp[4:6],tmp[6],tmp[7],False))))
+                    parsing_lines = False
+                    result = KBPStyle.from_untrusted(**fields)
+                    parsing_lines = True
+                    if palette:
+                        result = result.resolve_colors(palette)
+                    # Adding 1 to style for 2 reasons:
+                    # - Style 0/A is shown in the KBS UI as 01
+                    # - It allows indexing fixed styles as negative numbers
+                    styles[style_no] = result
+                    n += 1
+                else:
+                    raise ValueError("Unexpected line in style definitions")
+            except Exception as e:
+                if parsing_lines:
+                    raise KBPStyleParseError(f"Unable to parse style {style_no}", line = n)
+                else:
+                    raise KBPStyleParseError(f"Unable to parse style {style_no}", range = slice(n-2,n+1))
         return styles
     
     
@@ -642,7 +690,11 @@ class KBPLine(typing.NamedTuple):
                 ))
         return result
 
-
+class KBPPageParseError(ValueError):
+    def __init__(self, *args, **kwargs):
+        if 'line' in kwargs:
+            self.line = kwargs.pop('line')
+        super().__init__(*args, **kwargs)
 
 @validators.validated_instantiation
 class KBPPage(typing.NamedTuple):
@@ -651,50 +703,55 @@ class KBPPage(typing.NamedTuple):
     lines: list
 
     @staticmethod
-    def from_textlines(page_lines, default_wipe = None, tolerant=False):
+    def from_textlines(page_lines, default_wipe = None, tolerant = False):
         lines=[]
         syllables=[]
-        header=None
+        header = None
         transitions=["", ""] # Default line by line
         if tolerant:
             partial_syllable = []
-        for x in page_lines:
-            if header is None and re.match(r"[LCR]/[a-zA-Z](/-?\d+){5}$", x): # Only last 3 fields can logically be negative, but KBS allows all
-                fields = x.split("/")
-                fields[2:] = [int(y) for y in fields[2:]]
-                header = KBPLineHeader(**dict(zip(("align", "style", "start", "end", "right", "down", "rotation"), fields)))
-            elif x == "" and header is not None:
-                # Handle previous line
-                lines.append(KBPLine(header=header, syllables=syllables))
-                syllables = []
-                header = None
-            elif header is None and x.startswith("FX/"):
-                transitions = x.split('/')[1:]
-            elif x != "":
-                fields = x.split("/")
+        for n, x in enumerate(page_lines):
+            try:
+                if header is None and re.match(r"[LCR]/[a-zA-Z](/-?\d+){5}$", x): # Only last 3 fields can logically be negative, but KBS allows all
+                    fields = x.split("/")
+                    fields[2:] = [int(y) for y in fields[2:]]
+                    header = KBPLineHeader(**dict(zip(("align", "style", "start", "end", "right", "down", "rotation"), fields)))
+                elif x == "" and header is not None:
+                    # Handle previous line
+                    lines.append(KBPLine(header=header, syllables=syllables))
+                    syllables = []
+                    header = None
+                elif header is None and x.startswith("FX/"):
+                    transitions = x.split('/')[1:]
+                elif header is not None and x != "":
+                    fields = x.split("/")
 
-                # Sometimes kbp files are corrupt in such a way that a syllable line split into two
-                # This combines them back together into a valid line
-                # E.g.
-                #    Foo/     123/456/0
-                # Could have become
-                #    Foo
-                #    /     123/456/0
-                # Note that the second of these would be a syntactically-valid empty syllable on its own,
-                # but since it follows an incomplete line, it is combined into it, and the empty field is removed
-                if tolerant:
-                    partial_syllable.extend(fields if fields[0] or not partial_syllable else fields[1:])
-                    if len(partial_syllable) < 4:
-                        continue
-                    else:
-                        fields, partial_syllable = partial_syllable, []
+                    # Sometimes kbp files are corrupt in such a way that a syllable line split into two
+                    # This combines them back together into a valid line
+                    # E.g.
+                    #    Foo/     123/456/0
+                    # Could have become
+                    #    Foo
+                    #    /     123/456/0
+                    # Note that the second of these would be a syntactically-valid empty syllable on its own,
+                    # but since it follows an incomplete line, it is combined into it, and the empty field is removed
+                    if tolerant:
+                        partial_syllable.extend(fields if fields[0] or not partial_syllable else fields[1:])
+                        if len(partial_syllable) < 4:
+                            continue
+                        else:
+                            fields, partial_syllable = partial_syllable, []
 
-                fields[0] = re.sub(r"{-}", "/", fields[0]) # This field uses this as a surrogate for / since that denotes end of syllable
-                fields[1] = fields[1].lstrip() # Only the second field should have extra spaces
-                fields[1:] = [int(y) for y in fields[1:]]
-                if default_wipe and fields[3] == 0:
-                    fields[3] = default_wipe
-                syllables.append(KBPSyllable(**dict(zip(("syllable", "start", "end", "wipe"), fields))))
+                    fields[0] = re.sub(r"{-}", "/", fields[0]) # This field uses this as a surrogate for / since that denotes end of syllable
+                    fields[1] = fields[1].lstrip() # Only the second field should have extra spaces
+                    fields[1:] = [int(y) for y in fields[1:]]
+                    if default_wipe and fields[3] == 0:
+                        fields[3] = default_wipe
+                    syllables.append(KBPSyllable(**dict(zip(("syllable", "start", "end", "wipe"), fields))))
+                else:
+                    raise ValueError(f"Unexpected line{" (expected header here)" if header is None else ""}")
+            except Exception as e:
+                raise KBPPageParseError("Failed to parse page", line = n) from e
         return KBPPage(*transitions, lines)
 
     def get_start(self):
