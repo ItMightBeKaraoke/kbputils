@@ -214,7 +214,7 @@ class KBPFile:
 
     def writeFile(self, kbpFile, allow_overwrite=False):
         if any(x.has_colors() for x in self.styles.values()):
-            raise ValueError("Unable to write styles when they contain arbitrary colors. They must use palette indexes.")
+            raise ValueError("Unable to write styles with arbitrary colors back to kbp. They must use palette indexes. Ensure resolve_colors is set to False if processing an existing file.")
         if not isinstance(kbpFile, io.IOBase):
             if not allow_overwrite and os.path.exists(kbpFile) and hasattr(self,'filename') and os.path.samefile(kbpFile, self.filename):
                 raise ValueError("Refusing to write back to original filename. Set allow_overwrite if you need to do so.")
