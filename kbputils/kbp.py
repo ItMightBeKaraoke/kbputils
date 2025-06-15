@@ -522,9 +522,9 @@ class KBPStyleCollection(dict):
                     raise ValueError("Unexpected line in style definitions")
             except Exception as e:
                 if parsing_lines:
-                    raise KBPStyleParseError(f"Unable to parse style {style_no}", line = n)
+                    raise KBPStyleParseError(f"Unable to parse style {style_no}", line = n) from e
                 else:
-                    raise KBPStyleParseError(f"Unable to parse style {style_no}", range = slice(n-2,n+1))
+                    raise KBPStyleParseError(f"Unable to parse style {style_no}", range = slice(n-2,n+1)) from e
         return styles
     
     
