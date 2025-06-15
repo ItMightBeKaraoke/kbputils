@@ -283,7 +283,7 @@ class KBPPalette(collections.namedtuple("KBPPalette", tuple(range(16)), rename=T
     
     # namedtuple-generated classes don't have __init__ so must instead override __new__
     def __new__(cls, *colors):
-        assert len(colors) == 16 and all(re.match(r"[0-9A-F]{3}$", x) for x in colors)
+        assert len(colors) == 16 and all(re.match(r"[0-9A-F]{3}$", x) for x in colors), "Palette must have 16 12-bit RGB values."
         return super().__new__(cls, *colors)
 
     # Hide the field names because they are just _0 to _15 and aren't going to be used directly
@@ -332,12 +332,13 @@ class KBPStyle(typing.NamedTuple):
     @staticmethod
     def from_untrusted(**kwargs):
         for x in ('textcolor', 'outlinecolor', 'textwipecolor', 'outlinewipecolor'):
-            assert 0 <= kwargs[x] <= 15 if isinstance(kwargs[x], int) else re.match(r"[0-9A-F]{3}$",kwargs[x])
-        assert len(kwargs['outlines']) == 4 and all(isinstance(x, int) and x >= 0 for x in kwargs['outlines'])
-        assert len(kwargs['shadows']) == 2 and all(isinstance(x, int) and x >= 0 for x in kwargs['shadows'])
-        assert kwargs['wipestyle'] >= 0
-        assert kwargs['allcaps'] in "LU"
-        assert all(x in "BIUS" for x in kwargs['fontstyle'])
+            assert 0 <= kwargs[x] <= 15 if isinstance(kwargs[x], int) else re.match(r"[0-9A-F]{3}$",kwargs[x]), "Style color must be a palette index or RGB value"
+        assert len(kwargs['outlines']) == 4 and all(isinstance(x, int) and x >= 0 for x in kwargs['outlines']), "Outlines must be 4 non-negative integers"
+        assert len(kwargs['shadows']) == 2 and all(isinstance(x, int) and x >= 0 for x in kwargs['shadows']), "Shadows must be 2 non-negative integers"
+        # TODO: Look into narrowing this. I recall there were some cases where it could be >5 though
+        assert kwargs['wipestyle'] >= 0, "Wipe style must be a non-negative"
+        assert kwargs['allcaps'] in "LU", "All caps must be enabled (U) or disabled (L)"
+        assert all(x in "BIUS" for x in kwargs['fontstyle']), "Font style can only contain bold (B), italic (I), underline (U) or strike-through (S)"
         return KBPStyle(**kwargs)
 
     def has_colors(self):
@@ -742,6 +743,9 @@ class KBPPage(typing.NamedTuple):
                             continue
                         else:
                             fields, partial_syllable = partial_syllable, []
+
+                    suggestion = " Try the tolerant_parsing option?" if page_lines[n+1].startswith("/") else ""
+                    assert len(fields) == 4, f"Syllable line should have 4 fields (syllable, start, end, wipe).{suggestion}"
 
                     fields[0] = re.sub(r"{-}", "/", fields[0]) # This field uses this as a surrogate for / since that denotes end of syllable
                     fields[1] = fields[1].lstrip() # Only the second field should have extra spaces
