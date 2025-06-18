@@ -147,7 +147,7 @@ class KBPErrorDetails(typing.NamedTuple):
                         "description": f"Join with {x} syllable",
                         "pages": self.page,
                         "lines": self.line,
-                        "syllables": slice(self.syllable + to_add, self.syllable + 1 + to_add)
+                        "syllables": slice(self.syllable + to_add, self.syllable + 2 + to_add)
                       }
                     ))
                 return res
