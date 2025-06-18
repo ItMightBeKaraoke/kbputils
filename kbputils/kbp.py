@@ -95,7 +95,7 @@ class KBPErrorDetails(typing.NamedTuple):
                             "anchor": anchor,
                             "pages": self.page,
                             "lines": self.line,
-                            "value": -self.value
+                            "value": self.value
                           }
                         ),
                         KBPAction(KBPActionType.ChangeTiming, params = {
