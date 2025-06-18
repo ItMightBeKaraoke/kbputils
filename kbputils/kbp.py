@@ -12,12 +12,18 @@ from . import validators
 class KBPErrorCode(enum.Enum):
     # KBPLine
     NegativeLineStart = enum.auto()
-    NegativeLineEnd = enum.auto()
     LineStyleMissing = enum.auto()
     # KBPSyllable
     WipeStartBeforeLine = enum.auto()
     WipeEndAfterLine = enum.auto()
     ZeroWipeTiming = enum.auto()
+    NegativeWipeTiming = enum.auto()
+
+    def is_timing(self):
+        return self in (KBPErrorCode.NegativeLineStart, KBPErrorCode.WipeStartBeforeLine, KBPErrorCode.WipeEndAfterLine, KBPErrorCode.ZeroWipeTiming, KBPErrorCode.NegativeWipeTiming)
+
+    def __str__(self):
+        return re.sub(r'([A-Z])',r' \1',self.name)[1:]
 
 @validators.validated_instantiation
 class KBPErrorDetails(typing.NamedTuple):
@@ -26,6 +32,297 @@ class KBPErrorDetails(typing.NamedTuple):
     line: int
     syllable: int | None = None
     value: int | None = None
+
+    def __str__(self, parent=None):
+        result = f"{self.error} on page {self.page + 1}, line {self.line + 1}"
+        result += f", syllable {self.syllable + 1}." if self.syllable is not None else "."
+        if self.value is not None and self.error.is_timing():
+            result += " Syllable " if self.syllable is not None else " Line "
+            pl = '' if abs(self.value) == 1 else 's'
+            if self.error == KBPErrorCode.NegativeWipeTiming:
+                result += f"ends {-self.value} frame{pl} before it starts."
+            else:
+                result += f"starts {-self.value} frame{pl} early." if self.value < 0 else f"ends {self.value} frame{pl} late."
+        if parent:
+            result += "\n" + "\n".join(str(x) for x in self.propose_solutions(parent))
+        return result
+
+    def propose_solutions(self, parent):
+        match self.error:
+            case KBPErrorCode.NegativeLineStart:
+                return [
+                        KBPAction(KBPActionType.ChangeTiming, params = {
+                            "description": f"Shift all timings {-self.value / 100}s. Corresponding delay must be added to audio.",
+                            "target": KBPTimingTarget.Both,
+                            "anchor": KBPTimingAnchor.Both,
+                            "value": -self.value
+                          }
+                        ),
+                        KBPAction(KBPActionType.ChangeTiming, params = {
+                            "description": f"Change start of line to 0. May need to be re-run to check syllables and end timings.",
+                            "target": KBPTimingTarget.Line,
+                            "anchor": KBPTimingAnchor.Start,
+                            "pages": self.page,
+                            "lines": self.line,
+                            "value": -self.value
+                          }
+                        )
+                        ]
+            case KBPErrorCode.LineStyleMissing:
+                return [
+                        KBPAction(KBPActionType.CopyStyle, params = {
+                            "description": f"Copy another style to style {abs(self.value)}.",
+                            "destination": abs(self.value)
+                          }, free_params = {
+                            "source": [(x, parent.styles[x].name) for x in parent.styles]
+                          }
+                        ),
+                        KBPAction(KBPActionType.ChangeLineStyle, params = {
+                            "description": f"Change style of line.",
+                            "pages": self.page,
+                            "lines": self.line
+                          }, free_params = {
+                            "style": [(x, parent.styles[x].name) for x in parent.styles]
+                          }
+                        ),
+                        ]
+            case KBPErrorCode.WipeStartBeforeLine | KBPErrorCode.WipeEndAfterLine:
+                anchor = KBPTimingAnchor.Start if self.error == KBPErrorCode.WipeStartBeforeLine else KBPTimingAnchor.End
+                return [
+                        KBPAction(KBPActionType.ChangeTiming, params = {
+                            "description": f"Change {anchor.name.lower()} of line to that of the wipe. Watch out for overlap with another page",
+                            "target": KBPTimingTarget.Line,
+                            "anchor": anchor,
+                            "pages": self.page,
+                            "lines": self.line,
+                            "value": -self.value
+                          }
+                        ),
+                        KBPAction(KBPActionType.ChangeTiming, params = {
+                            "description": f"Change {anchor.name.lower()} of wipe to that of the line.",
+                            "target": KBPTimingTarget.Wipe,
+                            "anchor": anchor,
+                            "pages": self.page,
+                            "lines": self.line,
+                            "syllables": self.syllable,
+                            "value": -self.value
+                          }
+                        )
+                        ]
+            case KBPErrorCode.ZeroWipeTiming | KBPErrorCode.NegativeWipeTiming:
+                res = []
+                syls = parent.pages[self.page].lines[self.line].syllables
+                if self.syllable < len(syls) - 1 and (diff := syls[self.syllable+1].start - syls[self.syllable].end) > 1:
+                    res.append(KBPAction(KBPActionType.ChangeTiming, params = {
+                            "description": f"Change syllable end to match next syllable start (remove syllable gap).",
+                            "target": KBPTimingTarget.Wipe,
+                            "anchor": KBPTimingAnchor.End,
+                            "pages": self.page,
+                            "lines": self.line,
+                            "syllables": self.syllable,
+                            "value": diff - 1
+                          }
+                        )
+                    )
+                if self.syllable > 0 and (diff := syls[self.syllable].start - syls[self.syllable - 1].end) > 1:
+                    res.append(KBPAction(KBPActionType.ChangeTiming, params = {
+                            "description": f"Change syllable start to match previous syllable end (remove syllable gap).",
+                            "target": KBPTimingTarget.Wipe,
+                            "anchor": KBPTimingAnchor.Start,
+                            "pages": self.page,
+                            "lines": self.line,
+                            "syllables": self.syllable,
+                            "value": diff - 1
+                          }
+                        )
+                    )
+                for x in ("next", "previous"):
+                    if x == "next":
+                        if self.syllable == len(syls) - 1:
+                            continue
+                    elif self.syllable == 0:
+                        continue
+                    to_add = -1 if x == "previous" else 0
+                    res.append(KBPAction(KBPActionType.JoinSyllables, params = {
+                        "description": f"Join with {x} syllable",
+                        "pages": self.page,
+                        "lines": self.line,
+                        "syllables": slice(self.syllable + to_add, self.syllable + 1 + to_add)
+                      }
+                    ))
+                return res
+            case _:
+                raise ValueError(f"Unhandled error code {self.error}")
+
+class KBPActionType(enum.Enum):
+    JoinSyllables = enum.auto()
+    ChangeTiming = enum.auto()
+    ChangeLineStyle = enum.auto()
+    CopyStyle = enum.auto()
+
+    # Convenience method to run actions, e.g.
+    #     from kbputils import KBPActionType, KBPFile
+    #     kbp = KBPFile(...)
+    #     KBPActionType.JoinSyllables(kbp, pages=1, lines=1, syllables=slice(0:2))
+    def __call__(self, kbp, **params):
+        KBPAction(self, params).run(kbp)
+
+class KBPTimingTarget(enum.Flag):
+    Line = enum.auto()
+    Wipe = enum.auto()
+    Both = Line | Wipe
+    Syllable = Wipe # alias in case this makes more sense to some
+
+class KBPTimingAnchor(enum.Flag):
+    Start = enum.auto()
+    End = enum.auto()
+    Both = Start | End
+
+class KBPActionParams(enum.Enum):
+    target = enum.auto()
+    anchor = enum.auto()
+    pages = enum.auto()
+    lines = enum.auto()
+    syllables = enum.auto()
+    source = enum.auto()
+    destination = enum.auto()
+    value = enum.auto()
+
+class KBPAction(typing.NamedTuple):
+    action: KBPActionType
+    params: typing.Mapping[str, typing.Any]
+    free_params: typing.Mapping[str, typing.Iterable[typing.Any]] | None = None
+
+    # Serialize to a small form
+    # TODO: look into struct.pack if this gets too big
+    def compact(self) -> str:
+        result = 'KFv01|'
+        result += str(self.action.value) + '|'
+        for x in self.params:
+            if x not in KBPActionParams.__members__:
+                continue
+            result += str(KBPActionParams[x].value) + '='
+            val = self.params[x]
+            match val:
+                case enum.Enum():
+                    result += str(val.value)
+                case slice():
+                    result += f"{val.start}:{val.stop}"
+                case int():
+                    result += str(val)
+                case _:
+                    raise ValueError(f"Unknown type to pack for {x} ({type(val)} with value {val})")
+            result += '|'
+        return result
+
+    @staticmethod
+    def expand(compacted: str) -> typing.Self:
+        fields = compacted.split('|')
+        assert fields[0] == 'KFv01', f"Unknown compact format version {fields[0]}"
+        action = KBPActionType(int(fields[1]))
+        params = {}
+        for f in fields[2:-1]:
+            k, v = f.split('=')
+            param_no = KBPActionParams(int(k))
+            if param_no == KBPActionParams.target:
+                val = KBPTimingTarget(int(v))
+            elif param_no == KBPActionParams.anchor:
+                val = KBPTimingAnchor(int(v))
+            elif ':' in v:
+                val = slice(*(int(x) for x in v.split(':')))
+            else:
+                val = int(v)
+            params[param_no.name] = val
+        return KBPAction(action, params)
+
+
+    # Helper function to enumerate a list based on a slice or index in a parameter, or default slice if not provided
+    def _param_enumerate(self, param, obj, default_slice=slice(None)):
+        slice_param = self.params.get(param, default_slice)
+        if not isinstance(slice_param, slice):
+            slice_param = slice(slice_param,slice_param+1)
+        return zip(range(*slice_param.indices(len(obj))), obj[slice_param])
+
+    def run(self, kbp):
+        if self.free_params:
+            raise ValueError(f"Some parameters for {self.action} action have not been chosen: {list(self.free_params.keys())}")
+        match self.action:
+            case KBPActionType.JoinSyllables:
+                # Combine a number of syllables on the same line
+                # Required params:
+                #   pages: int
+                #   lines: int
+                #   syllables: slice
+                line = kbp.pages[self.params['pages']].lines[self.params['lines']]
+                s = self.params['syllables']
+                to_combine = line.syllables[s]
+                before = line.syllables[slice(None, s.start)] if s.start is not None else []
+                after = line.syllables[slice(s.stop, None)] if s.stop is not None else []
+                combined = KBPSyllable(
+                        syllable = "".join(x.syllable for x in to_combine),
+                        start = to_combine[0].start,
+                        end = to_combine[-1].end,
+                        wipe = to_combine[0].wipe
+                )
+                # KBPLine is immutable, but the syllables are a list
+                line.syllables.clear()
+                line.syllables.extend(before + [combined] + after)
+
+            case KBPActionType.ChangeTiming:
+                # Change syllable/line start/end times
+                # Required params:
+                #   anchor: KBPTimingAnchor
+                #   target: KBPTimingTarget
+                #   value: int
+                # Optional:
+                #   pages: int | slice - defaults to selecting all (slice(None))
+                #   lines: int | slice - defaults to selecting all (slice(None))
+                #   syllables: int | slice - defaults to selecting all (slice(None))
+                for page_no, page in self._param_enumerate('pages', kbp.pages):
+                    for line_no, line in self._param_enumerate('lines', page.lines):
+                        # Skip empty lines
+                        if not line.syllables:
+                            continue
+                        if KBPTimingTarget.Wipe in self.params['target']:
+                            for syllable_no, syllable in self._param_enumerate('syllables', line.syllables):
+                                # handle both start/end of syllables
+                                updates = {
+                                        (anchor_name := anchor.name.lower()): 
+                                        getattr(syllable, anchor_name) + self.params['value']
+                                        for anchor in self.params['anchor']
+                                }
+                                line.syllables[syllable_no] = syllable._replace(**updates)
+                        if KBPTimingTarget.Line in self.params['target']:
+                            updates = {
+                                    (anchor_name := anchor.name.lower()): 
+                                    getattr(line, anchor_name) + self.params['value']
+                                    for anchor in self.params['anchor']
+                            }
+                            page.lines[line_no] = line._replace(**updates)
+
+            case KBPActionType.ChangeLineStyle:
+                # Change syllable/line start/end times
+                # Required params:
+                #   style: int
+                # Optional:
+                #   pages: int | slice - defaults to selecting all (slice(None))
+                #   lines: int | slice - defaults to selecting all (slice(None))
+                style = self.params['style']
+                for page_no, page in self._param_enumerate('pages', kbp.pages):
+                    for line_no, line in self._param_enumerate('lines', page.lines):
+                        # Maintain fixed text attribute
+                        negate = -1 if line.style in string.ascii_lowercase else 1
+                        page.lines[line_no] = line._replace(style=KBPStyleCollection.key2alpha(negate * style))
+
+            case KBPActionType.CopyStyle:
+                # Copy one style over another
+                # Required params:
+                #   source: int
+                #   destination: int
+                dest = self.params['destination']
+                kbp.styles[dest] = kbp.styles[self.params['source']]._replace(style_no=dest)
+                if -dest in kbp.styles:
+                    kbp.styles[-dest] = kbp.styles[dest].make_fixed()
 
 class KBPFile:
 
@@ -46,6 +343,7 @@ class KBPFile:
         self.pages = []
         self.images = []
         self.lyrics = [] # Unsynced lyrics
+        self.onload_modifications = [] # Indicates whether a syntax error was automatically corrected during parsing
         if kbpFile is None:
             self.colors = KBPPalette("055","FFF","000","E70","940","CFF","033","0DD","077","FCF","303","F3F","818","000","FFF","000")
             self.styles = KBPStyleCollection({1: KBPStyle(style_no=1, name='Default', textcolor=1, outlinecolor=2, textwipecolor=3, outlinewipecolor=4, fontname='Arial', fontsize=12, fontstyle='B', charset=0, outlines=[2, 2, 2, 2], shadows=[0, 0], wipestyle=0, allcaps='L', fixed=False), 2: KBPStyle(style_no=2, name='Male', textcolor=5, outlinecolor=6, textwipecolor=7, outlinewipecolor=8, fontname='Arial', fontsize=12, fontstyle='B', charset=0, outlines=[2, 2, 2, 2], shadows=[0, 0], wipestyle=0, allcaps='L', fixed=False), 3: KBPStyle(style_no=3, name='Female', textcolor=9, outlinecolor=10, textwipecolor=11, outlinewipecolor=12, fontname='Arial', fontsize=12, fontstyle='B', charset=0, outlines=[2, 2, 2, 2], shadows=[0, 0], wipestyle=0, allcaps='L', fixed=False), 4: KBPStyle(style_no=4, name='Other', textcolor=4, outlinecolor=8, textwipecolor=12, outlinewipecolor=14, fontname='Arial', fontsize=12, fontstyle='B', charset=0, outlines=[2, 2, 2, 2], shadows=[0, 0], wipestyle=0, allcaps='L', fixed=False)})
@@ -104,12 +402,11 @@ class KBPFile:
                     self.lyrics = data
                     cursor = [None, slice(0,len(data)+1)]
 
-                # TODO: For things like this that send lines starting from x+1, receiving function shouldn't need to know to add 1 to line number
                 elif divider and status == '1' and line == "PAGEV2":
                     data = kbpLines[x+1:kbpLines.index(KBPFile.DIVIDER, x+1)]
                     cursor = [None, slice(1,len(data)+1)]
                     opts = {"default_wipe": self.other['wipedetail']} if resolve_wipe else {}
-                    self.pages.append(KBPPage.from_textlines(data, **opts, tolerant=tolerant_parsing))
+                    self.pages.append(KBPPage.from_textlines(data, **opts, tolerant=tolerant_parsing, parent=self))
 
                 elif divider and line in ('PAGEV2', 'LYRICSV2'):
                     raise ValueError(f"Incorrect lyric sync state found, expected {"synced" if self.trackinfo["Status"] == '1' else "unsynced"}")
@@ -261,11 +558,12 @@ class KBPFile:
 
         if needsclosed:
             kbpFile.close()
+        else:
+            kbpFile.flush()
 
     # There are several ways a syntactically valid KBP file may not work in practice. This will attempt to report on these logic errors
     def logicallyValidate(self) -> typing.List[KBPErrorDetails]:
         result = []
-        # TODO: Count from 1 to match user expectation or handle that in output?
         for p, page in enumerate(self.pages):
             for l, line in enumerate(page.lines):
                 result.extend(line.logicallyValidate(p, l, self.styles))
@@ -408,10 +706,11 @@ class KBPStyleCollection(dict):
     # Alias style letters used in line headers to style numbers used in definition
     @staticmethod
     def alpha2key(alpha):
-        if alpha in list(string.ascii_uppercase):
-            return string.ascii_uppercase.index(alpha)+1
-        elif alpha in list(string.ascii_lowercase):
-            return -string.ascii_lowercase.index(alpha)-1
+        if alpha in string.ascii_uppercase:
+            return ord(alpha)-ord('A')+1
+        elif alpha in string.ascii_lowercase:
+            return ord('a')-ord(alpha)-1
+
 
     def __missing__(self, key):
         if key in list(string.ascii_letters):
@@ -606,6 +905,24 @@ class KBPSyllable(typing.NamedTuple):
     def toKBP(self):
         return f"{self.syllable + '/':<15}" + "/".join(str(x) for x in self[1:])
 
+# _replace can't be replaced directly, but can with a decorator or a second level of inheritance
+def _kbpline_fix_replace(cls):
+    # Emulate as if the header attrs are part of KBPLine
+    def kbpline_replace(self, **kwargs):
+        final_kwargs = {}
+        for x in ('header', 'syllables'):
+            if x in kwargs:
+                final_kwargs[x] = kwargs.pop(x)
+            else:
+                final_kwargs[x] = getattr(self, x)
+        if kwargs:
+            final_kwargs['header'] = final_kwargs['header']._replace(**kwargs)
+        return KBPLine(**final_kwargs)
+    cls._replace = kbpline_replace
+    return cls
+    
+@_kbpline_fix_replace
+@validators.validated_instantiation
 class KBPLine(typing.NamedTuple):
     header: KBPLineHeader
     syllables: list
@@ -658,14 +975,7 @@ class KBPLine(typing.NamedTuple):
                 line=line_no,
                 value=self.start
             ))
-        if self.end < 0:
-            result.append(KBPErrorDetails(
-                error=KBPErrorCode.NegativeLineEnd,
-                page=page_no,
-                line=line_no,
-                value=self.end
-            ))
-        # If the style does not exist in the style collection, it will default but also switch to the default's style_no
+        # If the style does not exist in the style collection, it uses the default's style_no
         if (style_no := KBPStyleCollection.alpha2key(self.style)) != styles[self.style].style_no:
             result.append(KBPErrorDetails(
                 error=KBPErrorCode.LineStyleMissing,
@@ -673,23 +983,41 @@ class KBPLine(typing.NamedTuple):
                 line=line_no,
                 value=abs(style_no)
             ))
-        for s, syl in enumerate(self.syllables):
-            if syl.start < self.start:
-                result.append(KBPErrorDetails(
-                    error=KBPErrorCode.WipeStartBeforeLine,
-                    page=page_no,
-                    line=line_no,
-                    syllable=s,
-                    value=syl.start - self.start
-                ))
-            if syl.end > self.end:
-                result.append(KBPErrorDetails(
-                    error=KBPErrorCode.WipeEndAfterLine,
-                    page=page_no,
-                    line=line_no,
-                    syllable=s,
-                    value=syl.end - self.end
-                ))
+        # Skip everything related to syllables for fixed text lines
+        if not self.header.isfixed():
+            for s, syl in enumerate(self.syllables):
+                if syl.start < self.start:
+                    result.append(KBPErrorDetails(
+                        error=KBPErrorCode.WipeStartBeforeLine,
+                        page=page_no,
+                        line=line_no,
+                        syllable=s,
+                        value=syl.start - self.start
+                    ))
+                if syl.end > self.end:
+                    result.append(KBPErrorDetails(
+                        error=KBPErrorCode.WipeEndAfterLine,
+                        page=page_no,
+                        line=line_no,
+                        syllable=s,
+                        value=syl.end - self.end
+                    ))
+                # Ignore gap lines (zero timing but no syllable data)
+                if syl.start == syl.end and syl.syllable:
+                    result.append(KBPErrorDetails(
+                        error=KBPErrorCode.ZeroWipeTiming,
+                        page=page_no,
+                        line=line_no,
+                        syllable=s
+                    ))
+                if syl.start > syl.end:
+                    result.append(KBPErrorDetails(
+                        error=KBPErrorCode.NegativeWipeTiming,
+                        page=page_no,
+                        line=line_no,
+                        syllable=s,
+                        value=syl.end - syl.start
+                    ))
         return result
 
 class KBPPageParseError(ValueError):
@@ -705,7 +1033,7 @@ class KBPPage(typing.NamedTuple):
     lines: list
 
     @staticmethod
-    def from_textlines(page_lines, default_wipe = None, tolerant = False):
+    def from_textlines(page_lines, default_wipe = None, tolerant = False, parent = None):
         lines=[]
         syllables=[]
         header = None
@@ -737,9 +1065,21 @@ class KBPPage(typing.NamedTuple):
                     #    /     123/456/0
                     # Note that the second of these would be a syntactically-valid empty syllable on its own,
                     # but since it follows an incomplete line, it is combined into it, and the empty field is removed
+                    #
+                    # If one of these files is opened in KBS and saved back out, the fields get zeroed:
+                    #    Foo/      0/0/0
+                    #    /         123/456/0
+                    # So this should be handled as well
                     if tolerant:
                         partial_syllable.extend(fields if fields[0] or not partial_syllable else fields[1:])
                         if len(partial_syllable) < 4:
+                            if parent:
+                                parent.onload_modifications.append(f"Incomplete syllable on page {len(parent.pages)+1}, line {len(lines)+1}, syllable {len(syllables)+1}")
+                            continue
+                        elif all(x.lstrip() == '0' for x in partial_syllable[1:]) and page_lines[n+1].startswith("/"):
+                            partial_syllable = partial_syllable[0:1]
+                            if parent:
+                                parent.onload_modifications.append(f"Corrupted syllable on page {len(parent.pages)+1}, line {len(lines)+1}, syllable {len(syllables)+1}")
                             continue
                         else:
                             fields, partial_syllable = partial_syllable, []

@@ -39,6 +39,21 @@ class _UsageAllAction(argparse.Action):
 class KBPInputOptions:
     tolerant_parsing: bool = dataclasses.field(default=False, metadata={'doc': "Automatically fix syntax errors in .kbp file if they have an unambiguous interpretation"})
 
+@dataclasses.dataclass
+class KBPCheckOptions:
+    suggestions: bool = dataclasses.field(default=False, metadata={'doc': "Provide suggestions for fixing problems"})
+
+def kbpcheck(source, args, dest):
+    suggest = hasattr(args, "suggestions") and args.suggestions
+    for fix in source.onload_modifications:
+        dest.write(fix + "\n")
+        if suggest:
+            dest.write(" - Fixed automatically by tolerant parsing option\n")
+    for err in (errs := source.logicallyValidate()):
+        dest.write(str(err) + "\n")
+        if suggest:
+            dest.write("\n".join(" - " + x.params["description"] for x in err.propose_solutions(source)) + "\n")
+    sys.exit(min(len(errs) + len(source.onload_modifications), 255))
 
 def convert_file():
     parser = argparse.ArgumentParser(
@@ -95,10 +110,9 @@ def convert_file():
             },
             'input': kbp.KBPFile,
             'input_options': KBPInputOptions,
-            # TODO: Output CLI-friendly report rather than data structure
-            'output': lambda source, args, dest: dest.write(repr(source.logicallyValidate())),
+            'output': kbpcheck,
             'output_opts': {},
-            #'options': 
+            'options': KBPCheckOptions
         },
     }
 
