@@ -44,6 +44,36 @@ Converters
     with open("outputfile.kbp", "w", encoding='utf-8', newline='\r\n') as f:
         kbp.writeFile(f) # writeFile() can also just take a filename so you don't need to create a file handle like this
 
+Utilities
+---------
+
+### KBP file validation and problem resolution
+
+    k = kbputils.KBPFile(filename, tolerant_parsing=True)
+    syntax_errors = k.onload_modifications # If you save out the file now, it will correct these immediately
+    errors = k.logicallyValidate() # These may have more than one possible resolutions
+    action_choices = errors[0].propose_solutions(k) # Provide possible solutions for the first error
+    action_choices[0].run() # Run the first solution - note that some actions require extra parameters, listed in a free_params attr
+
+### File update operations
+
+    # Long form - Subtract 5cs from the start and end wipe timings for all syllables on the first two pages
+    action = kbputils.KBPAction(kbputils.KBPActionType.ChangeTiming, params={
+        "target": kbputils.KBPTimingTarget.Wipe,
+        "anchor": kbputils.KBPTimingAnchor.Both,
+        "pages": slice(0,3),
+        "value": -5
+    }
+    action.run(k)
+    # Slightly shorter form of the same
+    kbputils.KBPActionType.ChangeTiming(k, target=kbputils.KBPTimingTarget.Wipe, anchor=kbputils.KBPTimingAnchor.Both, pages=slice(0,3), value=-5)
+    # Join the first 5 syllables on page 2, line 3 (zero-indexed)
+    kbputils.KBPActionType.JoinSyllables(k, pages=2, line=3, syllables=slice(0,6))
+    # Change the style of all lines on the first page to style 6
+    kbputils.KBPActionType.ChangeLineStyle(k, pages=0, style=6)
+    # Copy style 1 to style 7
+    kbputils.KBPActionType.CopyStyle(k, source=1, destination=7)
+
 If the title, author, and comment options are not overridden when constructing the converter and are specified in the appropriate LRC tags, those are used in the .kbp.
 
 Converter CLIs
@@ -166,3 +196,32 @@ Converter CLIs
                             int (default: 500)
       --template-file, -l TEMPLATE_FILE
                             str (default: )
+
+Utility CLIs
+-------------
+
+### Check/resolve kbp file issues
+
+    $ KBPUtils kbpcheck --help
+    usage: KBPUtils kbpcheck [-h] [--suggestions | --no-suggestions | -s] [--interactive | --no-interactive | -i]
+                             [--overwrite | --no-overwrite | -o] [--tolerant-parsing | --no-tolerant-parsing | -p]
+                             source_file [dest_file]
+    
+    Discover logic errors in kbp files
+    
+    positional arguments:
+      source_file
+      dest_file
+    
+    options:
+      -h, --help            show this help message and exit
+      --suggestions, --no-suggestions, -s
+                            Provide suggestions for fixing problems (default: False)
+      --interactive, --no-interactive, -i
+                            Start an interactive session to fix problems (default: False)
+      --overwrite, --no-overwrite, -o
+                            Allow in-place overwriting of file in interactive mode. Not recommended! (default: False)
+      --tolerant-parsing, --no-tolerant-parsing, -p
+                            Automatically fix syntax errors in .kbp file if they have an unambiguous interpretation (default:
+                            False)
+
