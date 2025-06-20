@@ -88,13 +88,28 @@ def kbpcheck(source, args, dest):
                     sys.exit(0)
                 else:
                     try:
-                        i = int(choice)
-                        assert 0 < i <= len(solutions)+1
+                        i = int(choice) - 1
+                        assert 0 <= i < len(solutions)+1
                     except Exception:
                         print(f"Please enter a number between 1 and {len(solutions)+1}, w [filename], x, or hit enter for the default (no action).")
                         continue
-                    if i < len(solutions)+1:
-                        solutions[i-1].run(source)
+                    if i < len(solutions):
+                        for param in solutions[i].free_params:
+                            param_data = solutions[i].free_params[param]
+                            print(f"Choose {param} to use")
+                            for choice, desc in param_data:
+                                print(f"  {choice}) {desc}")
+                            default_choice = param_data[0][0]
+                            while True:
+                                try:
+                                    choice = type(param_data[0][0])(input(f"[{default_choice}]: ")) or default_choice
+                                    assert choice in (x for x,_ in param_data)
+                                    solutions[i].params[param] = choice
+                                    break
+                                except Exception:
+                                    print("Please choose one of the provided options")
+                        solutions[i].free_params.clear()
+                        solutions[i].run(source)
 
                     break
         dest.write("\n")
