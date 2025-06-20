@@ -51,9 +51,9 @@ Utilities
 
     k = kbputils.KBPFile(filename, tolerant_parsing=True)
     syntax_errors = k.onload_modifications # If you save out the file now, it will correct these immediately
-    errors = k.logicallyValidate() # These may have more than one possible resolutions
+    logic_errors = k.logicallyValidate() # These may have more than one possible resolutions
     action_choices = errors[0].propose_solutions(k) # Provide possible solutions for the first error
-    action_choices[0].run() # Run the first solution - note that some actions require extra parameters, listed in a free_params attr
+    action_choices[0].run(k) # Run the first solution - note that some actions require extra parameters, listed in a free_params attr
 
 ### File update operations
 
@@ -63,7 +63,7 @@ Utilities
         "anchor": kbputils.KBPTimingAnchor.Both,
         "pages": slice(0,3),
         "value": -5
-    }
+    })
     action.run(k)
     # Slightly shorter form of the same
     kbputils.KBPActionType.ChangeTiming(k, target=kbputils.KBPTimingTarget.Wipe, anchor=kbputils.KBPTimingAnchor.Both, pages=slice(0,3), value=-5)
@@ -73,6 +73,8 @@ Utilities
     kbputils.KBPActionType.ChangeLineStyle(k, pages=0, style=6)
     # Copy style 1 to style 7
     kbputils.KBPActionType.CopyStyle(k, source=1, destination=7)
+    # Save out the modified file
+    k.writeFile("new_file.kbp")
 
 If the title, author, and comment options are not overridden when constructing the converter and are specified in the appropriate LRC tags, those are used in the .kbp.
 
