@@ -359,7 +359,7 @@ class KBPFile:
         if needsclosed:
             kbpFile.close()
 
-    def parse(self, kbpLines, resolve_colors=False, resolve_wipe=True, template=None, tolerant_parsing=False):
+    def parse(self, kbpLines, resolve_colors=False, resolve_wipe=False, template=None, tolerant_parsing=False):
         in_header = False
         top_section = True
         divider = False
@@ -462,7 +462,13 @@ class KBPFile:
         if not hasattr(self, 'trackinfo') and template == False: # ignore when None
             raise ValueError("Invalid KBP file, missing track info. If this was intended to be used as a template, set template to True or None")
 
-    
+    def resolve_wipes(self) -> None:
+        for page in self.pages:
+            for line in page.lines:
+                for n, syl in enumerate(line.syllables):
+                    if syl.wipe == 0:
+                        line.syllables[n] = syl._replace(wipe=self.other['wipedetail'])
+
 
     def parse_margins(self, margin_line):
         self.margins = dict(zip(("left", "right", "top", "spacing"), (int(x) for x in margin_line.strip().split(","))))

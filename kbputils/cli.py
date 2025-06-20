@@ -6,8 +6,10 @@ from . import __version__
 import argparse
 import dataclasses
 import io
+import os
 import sys
 import collections
+import traceback
 
 # Shows a usage message for the main command and all subcommands.
 # Requires an attribute added_subparsers since ArgumentParser normally
@@ -42,17 +44,79 @@ class KBPInputOptions:
 @dataclasses.dataclass
 class KBPCheckOptions:
     suggestions: bool = dataclasses.field(default=False, metadata={'doc': "Provide suggestions for fixing problems"})
+    interactive: bool = dataclasses.field(default=False, metadata={'doc': "Start an interactive session to fix problems"})
+    overwrite: bool = dataclasses.field(default=False, metadata={'doc': "Allow in-place overwriting of file in interactive mode. Not recommended!"})
 
 def kbpcheck(source, args, dest):
-    suggest = hasattr(args, "suggestions") and args.suggestions
+    suggest = getattr(args, "suggestions", False)
+    interact = getattr(args, "interactive", False)
+    overwrite = getattr(args, "overwrite", False)
+    if interact:
+        # In interactive mode, prompts should be to stdout, but dest can be used for the file to write
+        (output, dest) = (dest, sys.stdout)
+    else:
+        if dest and os.path.exists(dest) and os.path.samefile(dest, source.filename):
+            sys.stderr.write("Not writing over kbp file! Leave destination argument blank or provide a suitable output file.\n")
+            sys.exit(1)
+        dest = open(dest, 'w') if dest else sys.stdout
     for fix in source.onload_modifications:
         dest.write(fix + "\n")
-        if suggest:
-            dest.write(" - Fixed automatically by tolerant parsing option\n")
+        if suggest or interact:
+            dest.write(" - Fixed automatically by tolerant parsing option\n\n")
     for err in (errs := source.logicallyValidate()):
         dest.write(str(err) + "\n")
-        if suggest:
-            dest.write("\n".join(" - " + x.params["description"] for x in err.propose_solutions(source)) + "\n")
+        if suggest or interact:
+            solutions = err.propose_solutions(source)
+            dest.write("Solutions:\n")
+            dest.write("\n".join(f"  {n}) " + x.params["description"] for n, x in enumerate(solutions, 1)) + "\n")
+        if interact:
+            print(f"  {len(solutions)+1}) Take no action")
+            print(f"  w) Save to {output or '<stdout>'} or specified filename and exit without resolving remaining errors")
+            print("  x) Exit without saving")
+            while True:
+                choice = input(f"[{len(solutions)+1}]: ") or str(len(solutions)+1)
+                if choice == 'x':
+                    sys.exit(0)
+                elif choice == 'w' or choice.startswith('w '):
+                    fname = choice[2:] or output or sys.stdout
+                    try:
+                        source.writeFile(fname, allow_overwrite=overwrite)
+                    except Exception:
+                        print(traceback.format_exc())
+                        print("Sorry, try another filename")
+                        continue
+                    sys.exit(0)
+                else:
+                    try:
+                        i = int(choice)
+                        assert 0 < i <= len(solutions)+1
+                    except Exception:
+                        print(f"Please enter a number between 1 and {len(solutions)+1}, w [filename], x, or hit enter for the default (no action).")
+                        continue
+                    if i < len(solutions)+1:
+                        solutions[i-1].run(source)
+
+                    break
+        dest.write("\n")
+    if interact:
+        print(f"\nDone editing file!\n")
+        print(f"  w) Save to {output or '<stdout>'} or specified filename")
+        print("  x) Exit without saving")
+        while True:
+            choice = input(f"[w]: ") or "w"
+            if choice == 'x':
+                sys.exit(0)
+            elif choice == 'w' or choice.startswith('w '):
+                fname = choice[2:] or output or sys.stdout
+                try:
+                    source.writeFile(fname)
+                except Exception:
+                    print(traceback.format_exc())
+                    print("Sorry, try another filename")
+                    continue
+                sys.exit(0)
+                
+    dest.close()
     sys.exit(min(len(errs) + len(source.onload_modifications), 255))
 
 def convert_file():
@@ -111,7 +175,7 @@ def convert_file():
             'input': kbp.KBPFile,
             'input_options': KBPInputOptions,
             'output': kbpcheck,
-            'output_opts': {},
+            'output_opts': None, # needs the filename instead of handle so it can write selectively in interactive mode
             'options': KBPCheckOptions
         },
     }
@@ -181,7 +245,10 @@ def convert_file():
     del args.subparser
     source = parser_data[subparser]['input'](sys.stdin if args.source_file == "-" else args.source_file, **input_options)
     del args.source_file
-    dest = open(args.dest_file, 'w', **parser_data[subparser]['output_opts']) if hasattr(args, 'dest_file') else sys.stdout
+    if parser_data[subparser]['output_opts'] is None:
+        dest = args.dest_file if hasattr(args, 'dest_file') else None
+    else:
+        dest = open(args.dest_file, 'w', **parser_data[subparser]['output_opts']) if hasattr(args, 'dest_file') else sys.stdout
     if hasattr(args, 'dest_file'):
         del args.dest_file
     parser_data[subparser]['output'](source, args, dest)

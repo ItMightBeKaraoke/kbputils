@@ -106,6 +106,7 @@ class AssConverter:
     @validators.validated_types
     def __init__(self, kbpFile: kbp.KBPFile, options: AssOptions = None, **kwargs):
         self.kbpFile = kbpFile
+        self.kbpFile.resolve_wipes()
         # Allow for applying specific overrides to defaults in kwargs, or
         # providing a template for defaults then overriding items there
         self.options = options or AssOptions()
