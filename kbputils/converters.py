@@ -60,20 +60,20 @@ class AssOverflow(enum.Enum):
 class AssOptions:
     #position: bool
     #wipe: bool
-    border: bool = True # Add CDG-style borders to margins
+    border: bool = dataclasses.field(default=True, metadata={"doc": "Add CDG-style borders to margins"})
     #display: int
     #remove: int
-    float_font: bool = True # Allow floating point in output font sizes (well-supported)
-    float_pos: bool = False # Allow floating point in \pos and margins (supported by recent libass)
-    target_x: int = 300 # Output resolution
-    target_y: int = 216
-    fade_in: int = 300 # Fade duration for line display/remove
-    fade_out: int = 200
-    transparency: bool = True
-    offset: int | bool = True # False = disable offset (same as 0), True = pull from KBS config, int is offset in ms
-    overflow: AssOverflow = AssOverflow.EVEN_SPLIT
-    allow_kt: bool = False # Use \kt if there are overlapping wipes on the same line (not supported by all ass implementations)
-    experimental_spacing: bool = False
+    float_font: bool = dataclasses.field(default=True, metadata={"doc": "Use floating point in output font sizes (well-supported in renderers)"})
+    float_pos: bool = dataclasses.field(default=False, metadata={"doc": "Use floating point in \\pos and margins (supported by recent libass)"})
+    target_x: int = dataclasses.field(default=300, metadata={"doc": "Output width"})
+    target_y: int = dataclasses.field(default=216, metadata={"doc": "Output height"})
+    fade_in: int = dataclasses.field(default=300, metadata={"doc": "Fade duration for line display (ms)"})
+    fade_out: int = dataclasses.field(default=200, metadata={"doc": "Fade duration for line removal (ms)"})
+    transparency: bool = dataclasses.field(default=True, metadata={"doc": "Treat palette index 1 as transparent"})
+    offset: int | bool = dataclasses.field(default=True, metadata={"doc": "How to handle KBS offset. False => disable offset (same as 0), True => pull from KBS config, int is offset in ms"})
+    overflow: AssOverflow = dataclasses.field(default=AssOverflow.EVEN_SPLIT, metadata={"doc": "How to handle lines wider than the screen"})
+    allow_kt: bool = dataclasses.field(default=False, metadata={"doc": "Use \kt if there are overlapping wipes on the same line (not supported by all ass implementations)"})
+    experimental_spacing: bool = dataclasses.field(default=False, metadata={"doc": 'Calculate the "style 1" spacing instead of using Arial 12 bold default (only works for select fonts)'})
     #overflow_spacing: float # TODO? spacing value in styles that will apply for overflow (default 0). Multiplied by font height or based on default style?
 
     @validators.validated_types
@@ -106,6 +106,7 @@ class AssConverter:
     @validators.validated_types
     def __init__(self, kbpFile: kbp.KBPFile, options: AssOptions = None, **kwargs):
         self.kbpFile = kbpFile
+        self.kbpFile.resolve_wipes()
         # Allow for applying specific overrides to defaults in kwargs, or
         # providing a template for defaults then overriding items there
         self.options = options or AssOptions()
@@ -228,19 +229,27 @@ class AssConverter:
         result = str(pos) + self.fade()
         if self.kbpFile.styles[line.style].fixed:
             return result + line.text()
+        if line.start < 0:
+            line = line._replace(start = 0)
         cur = line.start
         for (n, s) in enumerate(line.syllables):
+            if s.start < line.start:
+                s = s._replace(start=line.start)
+            if s.end < s.start:
+                s = s._replace(end=s.start)
             delay = s.start - cur
             dur = s.end - s.start
 
             if delay > 0:
                 # Gap between current position and start of next syllable
                 result += r"{\k%d}" % delay
+                cur += delay
             elif delay < 0:
                 # Playing catchup
                 if self.allow_kt:
                     # Reset time so wipes can overlap (\kt takes a time in centiseconds from line start)
                     result += r"{\kt%d}" % (s.start - line.start)
+                    cur = s.start
                 else:
                     # Shorten syllable to compensate for missing time (keep in mind delay is negative)
                     dur += delay
@@ -251,12 +260,15 @@ class AssConverter:
             if len(line.syllables) > n+1 and line.syllables[n+1].start - s.end == 1:
                 dur += 1
 
+            if dur < 0:
+                dur = 0
+
             # Using == False explicitly because it's technically a tri-state with None meaning undefined
             # Though that scenario shouldn't come up since we are allowing KBPFile to resolve wipedetail
             wipe = r"\k" if s.isprogressive() == False else r"\kf"
 
             result += r"{%s%d}%s" % (wipe, dur, self.kbpsyl2ass(s.syllable, n==0))
-            cur = s.start + dur
+            cur += dur
         return result
 
     @validators.validated_types
