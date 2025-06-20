@@ -409,7 +409,7 @@ class KBPFile:
                     self.pages.append(KBPPage.from_textlines(data, **opts, tolerant=tolerant_parsing, parent=self))
 
                 elif divider and line in ('PAGEV2', 'LYRICSV2'):
-                    raise ValueError(f"Incorrect lyric sync state found, expected {"synced" if self.trackinfo["Status"] == '1' else "unsynced"}")
+                    raise ValueError(f"Incorrect lyric sync state found, expected {'synced' if self.trackinfo['Status'] == '1' else 'unsynced'}")
 
                 elif divider and line == "IMAGE":
                     # TODO: Determine if it's ever possible to have multiple image lines in one section
@@ -1057,6 +1057,13 @@ class KBPPage(typing.NamedTuple):
                     lines.append(KBPLine(header=header, syllables=syllables))
                     syllables = []
                     header = None
+                elif x == "":
+                    # Ignore any empty lines before a header, i.e. after a transition
+                    # PAGEV2
+                    # FX/F/
+                    #
+                    # C/A/123/456/0/0/0
+                    continue
                 elif header is None and x.startswith("FX/"):
                     transitions = x.split('/')[1:]
                 elif header is not None and x != "":
@@ -1100,7 +1107,7 @@ class KBPPage(typing.NamedTuple):
                         fields[3] = default_wipe
                     syllables.append(KBPSyllable(**dict(zip(("syllable", "start", "end", "wipe"), fields))))
                 else:
-                    raise ValueError(f"Unexpected line{" (expected header here)" if header is None else ""}")
+                    raise ValueError(f"Unexpected line{' (expected header here)' if header is None else ''}")
             except Exception as e:
                 raise KBPPageParseError("Failed to parse page", line = n) from e
         return KBPPage(*transitions, lines)

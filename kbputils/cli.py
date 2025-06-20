@@ -21,15 +21,13 @@ class _UsageAllAction(argparse.Action):
          option_strings,
          dest=argparse.SUPPRESS,
          default=argparse.SUPPRESS,
-         help=None,
-         deprecated=False):
+         help=None):
         super().__init__(
             option_strings=option_strings,
             dest=dest,
             default=default,
             nargs=0,
-            help=help,
-            deprecated=deprecated)
+            help=help)
 
     def __call__(self, parser, namespace, values, option_string=None):
         print(parser.format_usage())
@@ -94,7 +92,7 @@ def kbpcheck(source, args, dest):
                         print(f"Please enter a number between 1 and {len(solutions)+1}, w [filename], x, or hit enter for the default (no action).")
                         continue
                     if i < len(solutions):
-                        for param in solutions[i].free_params:
+                        for param in solutions[i].free_params or []:
                             param_data = solutions[i].free_params[param]
                             print(f"Choose {param} to use")
                             for choice, desc in param_data:
@@ -108,7 +106,8 @@ def kbpcheck(source, args, dest):
                                     break
                                 except Exception:
                                     print("Please choose one of the provided options")
-                        solutions[i].free_params.clear()
+                        if solutions[i].free_params:
+                            solutions[i].free_params.clear()
                         solutions[i].run(source)
 
                     break
