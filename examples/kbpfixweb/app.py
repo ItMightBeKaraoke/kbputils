@@ -1,4 +1,5 @@
 import flask
+import markupsafe
 import io
 import kbputils
 import tempfile
@@ -14,7 +15,9 @@ if not os.path.exists('.secret'):
 with open(".secret", "rb") as f:
     app.secret_key = f.read()
 
-landing_page = """
+foot = '<p>More info and source <a href="https://github.com/ItMightBeKaraoke/kbputils/tree/main/examples/kbpfixweb">here</a></p>'
+
+landing_page = f"""
 <!doctype html>
 <head><title>KBP fix tool</title></head>
 <body>
@@ -24,6 +27,7 @@ landing_page = """
 <input type="file" accept=".kbp" name="file" />
 <input type="submit" value="Upload" />
 </form>
+{foot}
 </body>
 """
 
@@ -88,6 +92,7 @@ kbpcheck_result = """
 <p>No errors detected. Have a nice day!</p>
 <p><a href="/">Process more files</p>
 {% endif %}
+{{foot}}
 </body>
 """
 
@@ -126,7 +131,7 @@ def process():
 
     if not (syntax_errors or logic_errors):
         os.remove(fname)
-    return flask.render_template_string(kbpcheck_result, syntax_errors=syntax_errors, logic_errors=logic_errors, kbp=kbp)
+    return flask.render_template_string(kbpcheck_result, syntax_errors=syntax_errors, logic_errors=logic_errors, kbp=kbp, foot=markupsafe.Markup(foot))
 
 @app.post('/fix')
 def fix():
