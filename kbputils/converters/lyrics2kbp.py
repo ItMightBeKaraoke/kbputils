@@ -23,8 +23,8 @@ class LyricsOptions:
     @validators.validated_types
     @staticmethod
     def __assert_valid(key: str, value):
-        if key in GeneralLyricsOptions._fields:
-            if not isinstance(value, (t := GeneralLyricsOptions._fields[key].type)):
+        if key in LyricsOptions._fields:
+            if not isinstance(value, (t := LyricsOptions._fields[key].type)):
                 if callable(t):
                     value = t(value)
                 # Also try the first type in a union
@@ -41,7 +41,7 @@ class LyricsOptions:
     def update(self, **options):
         for opt in options:
             setattr(self, opt, options[opt])
-LyricsOptions._fields = types.MappingProxyType(dict((f.name,f) for f in dataclasses.fields(GeneralLyricsOptions)))
+LyricsOptions._fields = types.MappingProxyType(dict((f.name,f) for f in dataclasses.fields(LyricsOptions)))
 
 # Create aliases in case anyone is relying on the old name
 DoblonTxtOptions = LyricsOptions
