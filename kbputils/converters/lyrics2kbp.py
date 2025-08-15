@@ -1,6 +1,7 @@
 import dataclasses
 import types
 import math
+import string
 from .. import kbp
 from .. import validators
 from .. import doblontxt
@@ -87,7 +88,7 @@ class LyricsConverter:
                     continue
             line_header = kbp.KBPLineHeader(
                 align="C",
-                style="A", # TODO: Figure out generic way to handle if a lyrics type has parts (midiCo LRC)
+                style=string.ascii_uppercase[line.part - 1] if hasattr(line, "part") else "A",
                 start=round((line[0][0] - self.options.display_before_wipe)/10),
                 end=round((line[-1][1] + self.options.remove_after_wipe)/10),
                 right=0,

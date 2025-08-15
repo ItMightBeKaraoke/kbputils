@@ -170,7 +170,7 @@ def convert_file():
         },
         'lrc2kbp': {
             'add_parser': {
-                'description': 'Convert Enhanced .lrc to .kbp',
+                'description': 'Convert Enhanced or MidiCo .lrc to .kbp',
                 'argument_default': argparse.SUPPRESS
             },
             'input': lrc.LRC,
