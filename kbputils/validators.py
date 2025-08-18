@@ -1,5 +1,6 @@
 import functools
 import inspect
+import typing
 
 # Decorator for validating the number of arguments passed to a function with a *args parameter
 # The assumption is that if the function has a . in its qualified name, it will be used as an
@@ -83,6 +84,24 @@ def validated_types(func=None, /, *, coerce_types=True):
         return validated_types_generator(func)
     else:
         return validated_types_generator
+
+# Helper that can be used to create an assert_function for validated_structures
+# Test each value against a type found in a map/dict. Coerce to that type if possible
+@validated_types
+def validate_and_coerce_values(fields: typing.Mapping, key: str, value):
+    if key in fields:
+        if not isinstance(value, (t := fields[key].type)):
+            if callable(t):
+                value = t(value)
+            # Also try the first type in a union
+            elif hasattr(t, '__args__') and callable(s := t.__args__[0]):
+                value = s(value)
+        elif not isinstance(value, t):
+            raise TypeError(f"Expected {opt} to be of type {t}. Found {type(options[opt])}.")
+    else:
+        raise TypeError(f"Unexpected field '{key}'. Possible fields are {self._fields.keys()}.")
+
+    return value
 
 # Function decorator for checking an assertion across key/value data sent as a
 # single object parameter or provided in kwargs. Ignores the first argument,

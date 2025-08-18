@@ -24,19 +24,7 @@ class LyricsOptions:
     @validators.validated_types
     @staticmethod
     def __assert_valid(key: str, value):
-        if key in LyricsOptions._fields:
-            if not isinstance(value, (t := LyricsOptions._fields[key].type)):
-                if callable(t):
-                    value = t(value)
-                # Also try the first type in a union
-                elif hasattr(t, '__args__') and callable(s := t.__args__[0]):
-                    value = s(value)
-            elif not isinstance(value, t):
-                raise TypeError(f"Expected {opt} to be of type {t}. Found {type(options[opt])}.")
-        else:
-            raise TypeError(f"Unexpected field '{key}'. Possible fields are {self._fields.keys()}.")
-
-        return value
+        return validators.validate_and_coerce_values(LyricsOptions._fields, key, value)
 
     @validators.validated_structures(assert_function=__assert_valid)
     def update(self, **options):
@@ -52,6 +40,10 @@ class LyricsConverter:
     def __init__(self):
         raise NotImplementedError("LyricsConverter type must be subclassed")
 
+    def __getattr__(self, attr):
+        return getattr(self.options, attr)
+
+    @validators.validated_types(coerce_types=False)
     @staticmethod
     def syl2kbp(syl: str) -> str:
         if syl.endswith("-"):

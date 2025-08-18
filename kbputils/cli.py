@@ -10,6 +10,8 @@ import os
 import sys
 import collections
 import traceback
+import string
+import json
 
 # Shows a usage message for the main command and all subcommands.
 # Requires an attribute added_subparsers since ArgumentParser normally
@@ -155,6 +157,16 @@ def convert_file():
             },
             'options': converters.AssOptions
         },
+        'ass2video': {
+            'add_parser': {
+                'description': 'Render .ass subtitle to a video',
+                'argument_default': argparse.SUPPRESS
+            },
+            'input': None,
+            'output': lambda source, args, dest: converters.VideoConverter(source, dest, **vars(args)).run(),
+            'output_opts': None,
+            'options': converters.VideoOptions
+        },
         'doblontxt2kbp': {
             'add_parser': {
                 'description': 'Convert Doblon full timing .txt file to .kbp',
@@ -217,6 +229,11 @@ def convert_file():
             additional_params = {}
             if field.type == int | bool:
                 additional_params["type"] = int_or_bool 
+            elif field.type == str | None:
+                # TODO: more general
+                additional_params["type"] = str
+            elif field.type == dict:
+                additional_params["type"] = json_dict
             elif hasattr(field.type, "__members__") and hasattr(field.type, "__getitem__"):
                 # Handle enum types
                 additional_params["type"] = field.type.__getitem__
@@ -231,7 +248,7 @@ def convert_file():
                 help_text += field.type.__name__
             else:
                 help_text += repr(field.type)
-            help_text += f" (default: {field.default})"
+            help_text += f" (default: {json.dumps(field.default_factory()) if isinstance(field.default, dataclasses._MISSING_TYPE) else field.default})"
 
             cur.add_argument(
                 f"--{name}",
@@ -257,7 +274,11 @@ def convert_file():
             input_options[field.name] = getattr(args, field.name)
             delattr(args, field.name)
     del args.subparser
-    source = parser_data[subparser]['input'](sys.stdin if args.source_file == "-" else args.source_file, **input_options)
+    if parser_data[subparser]['input']:
+        source = parser_data[subparser]['input'](sys.stdin if args.source_file == "-" else args.source_file, **input_options)
+    else:
+        # If source handler not specified, provide the raw filename to the converter (it must also natively support "-" for stdin)
+        source = args.source_file
     del args.source_file
     if parser_data[subparser]['output_opts'] is None:
         dest = args.dest_file if hasattr(args, 'dest_file') else None
@@ -274,7 +295,7 @@ def gen_shortopt(command, longopt):
     # last one
     if len(parts := longopt.split("-")) > 1:
         return gen_shortopt(command, parts[-1])
-    for char in longopt:
+    for char in longopt + longopt.upper() + string.ascii_uppercase:
         if char not in used_shortopts[command]:
             used_shortopts[command].add(char)
             return f"-{char}"
@@ -288,6 +309,12 @@ def int_or_bool(strVal):
         return True
     else:
         return int(strVal)
+
+def json_dict(strVal):
+    res = json.loads(strVal)
+    if not isinstance(res, dict):
+        raise ValueError("Expected argument to be json serialization of dict")
+    return res
 
 if __name__ == "__main__":
     convert_file()
