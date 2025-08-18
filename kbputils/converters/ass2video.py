@@ -9,12 +9,22 @@ import types
 from .._ffmpegcolor import ffmpeg_color
 from .. import validators
 
+class Ratio(fractions.Fraction):
+    def __new__(cls, *args, **kwargs):
+        if isinstance(args[0], str) and ':' in args[0]:
+            args = (args[0].replace(':', '/'), *args[1:])
+        return super().__new__(cls, *args, **kwargs)
+    def __str__(self):
+        return super().__str__().replace('/', ':')
+    def __format__(self, spec):
+        return super().__format__(spec).replace('/', ':')
+
 @validators.validated_instantiation(replace="__init__")
 @dataclasses.dataclass
 class VideoOptions:
     preview: bool = dataclasses.field(default=False, metadata={"doc": "If set, do not run ffmpeg, only output the command that would be run"})
-    audio_file: str | None = dataclasses.field(default=None, metadata={"doc": "Audio track to use with video"})
-    aspect_ratio: fractions.Fraction = dataclasses.field(default=fractions.Fraction(300,216), metadata={"doc": "Aspect ratio of rendered subtitle. This will be letterboxed if not equal to the aspect ratio of the output video"})
+    audio_file: str | None = dataclasses.field(default=None, metadata={"doc": "Audio track to use with video", "existing_file": True})
+    aspect_ratio: Ratio = dataclasses.field(default=Ratio(300,216), metadata={"doc": "Aspect ratio of rendered subtitle. This will be letterboxed if not equal to the aspect ratio of the output video"})
     target_x: int = dataclasses.field(default=1500, metadata={"doc": "Output video width"})
     target_y: int = dataclasses.field(default=1080, metadata={"doc": "Output video height"})
     background_color: str = dataclasses.field(default="#000000", metadata={"doc": "Background color for the video, as 24-bit RGB hex value"})
@@ -37,6 +47,8 @@ class VideoOptions:
     outro_concat: bool = dataclasses.field(default=False, metadata={"doc": "Play the outro before the audio/video starts instead of inserting at time 0"})
     intro_fade_black: bool = dataclasses.field(default=False, metadata={"doc": "Fade in the video from a black screen instead of showing the background media immediately"})
     outro_fade_black: bool = dataclasses.field(default=False, metadata={"doc": "Fade the video out to a black screen instead of fading back to the background media"})
+    intro_sound: bool = dataclasses.field(default=False, metadata={"doc": "Preserve audio in the intro (if video). Note that when using without the intro_concat option, this will mix without normalization, and may cause clipping"})
+    outro_sound: bool = dataclasses.field(default=False, metadata={"doc": "Preserve audio in the outro (if video). Note that when using without the outro_concat option, this will mix without normalization, and may cause clipping"})
     output_options: dict = dataclasses.field(default_factory=lambda: {"pix_fmt": "yuv420p"}, metadata={"doc": "Additional parameters to pass to ffmpeg"})
 
     @validators.validated_types
@@ -51,10 +63,11 @@ class VideoOptions:
 
 VideoOptions._fields = types.MappingProxyType(dict((f.name,f) for f in dataclasses.fields(VideoOptions)))
 
-class MediaType(enum.Enum):
+class MediaType(enum.Flag):
     COLOR = enum.auto()
     IMAGE = enum.auto()
     VIDEO = enum.auto()
+    AUDIO = enum.auto()
 
 class Dimension(tuple):
     @validators.validated_types(coerce_types=False)
@@ -84,20 +97,31 @@ class VideoConverter:
     def __getattr__(self, attr):
         return getattr(self.options, attr)
 
-    # Return whether a file or ffmpeg.probe dict is a video or image
-    @validators.validated_types(coerce_types=False)
+    # Return what kind of streams are contained in the file or existing ffprobe dict
     @staticmethod
-    def get_visual_type(file: str | dict) -> MediaType:
+    @validators.validated_types(coerce_types=False)
+    def get_stream_types(file: str | dict) -> MediaType:
+        result = MediaType(0)
         if not isinstance(file, dict):
             file = ffmpeg.probe(file)
-        visual_stream = next(x for x in file['streams'] if x['codec_type'] == 'video')
-        # Seems like there should be a better way to do this, but ffprobe seems to do weird things
-        # like consider jpeg to be a one-frame mjpeg
-        if visual_stream.get('duration_ts', 1) > 1:
-            return MediaType.VIDEO
-        else:
-            return MediaType.IMAGE
-
+        if any(x['codec_type']=='audio' for x in file['streams']):
+            result |= MediaType.AUDIO 
+        if any(x['codec_type']=='video' for x in file['streams']):
+            # Is it really video or an image? Let's see...
+            # Yes, this is ridiculous, but
+            # 1) It's nearly impossible to determine this from ffprobe output and requires
+            #    looking at multiple fields which can vary between formats
+            # 2) I don't *really* care if it's an image or video, just whether I need these
+            #    two options, so may as well test them
+            testcmd = ffmpeg.output(
+                    ffmpeg.input(file['format']['filename'], framerate=60, loop=1, t=0.01),
+                    '-', f='null', loglevel='quiet'
+                    ).get_args()
+            if subprocess.run(['ffmpeg'] + testcmd).returncode == 0:
+                result |= MediaType.IMAGE
+            else:
+                result |= MediaType.VIDEO
+        return result
 
     def run(self):
         # TODO: handle exception
@@ -112,8 +136,8 @@ class VideoConverter:
             visual_stream = next(x for x in bginfo['streams'] if x['codec_type'] == 'video')
             # TODO: scale background media option?
             bg_size = Dimension(visual_stream["width"],visual_stream["height"])
-            background_type = self.get_visual_type(bginfo)
-            if background_type == MediaType.VIDEO:
+            background_type = self.get_stream_types(bginfo)
+            if MediaType.VIDEO in background_type:
                 if self.options.loop_bg:
                     # Repeat background video until audio is complete
                     background_video = ffmpeg.input(self.options.background_media, stream_loop=-1, t=song_length_str).video
@@ -140,6 +164,8 @@ class VideoConverter:
         del song_length_str
         ### Note: past this point, song_length_ms represents the confirmed output file duration rather than just the audio length
 
+        audio_stream = ffmpeg.input(self.options.audio_file).audio
+
         to_concat = [None, None]
         concat_length = 0
         for x in ("intro", "outro"):
@@ -147,20 +173,25 @@ class VideoConverter:
             if media:
             # TODO: alpha, sound?
                 opts = {}
-                if self.get_visual_type(media) == MediaType.IMAGE:
+                if MediaType.IMAGE in (media_type := self.get_stream_types(media)):
                     opts["loop"]=1
                     opts["framerate"]=60
+                if MediaType.AUDIO not in media_type:
+                    setattr(self.options, f"{x}_sound", False)
                 length = getattr(self.options, f"{x}_length")
                 # TODO skip scale if matching?
                 # TODO set x/y if mismatched aspect ratio?
                 overlay = ffmpeg.input(media, t=f"{length}ms", **opts).filter_("scale", s=str(bg_size))
                 if x == "outro" and not self.options.outro_concat:
-                    overlay = overlay.filter_("tpad", start_duration=f"{song_length_ms - length}ms", color="0x000000@0")
+                    # Not sure why the tpad filter (commented below) doesn't work - it seem to pad the wrong duration
+                    #overlay = overlay.filter_("tpad", start_duration=f"{song_length_ms - length}ms", color="0x000000@0")
+                    padding = ffmpeg_color(color="000000@0", r=60, s=str(bg_size), d=f"{song_length_ms - length}ms")
+                    overlay = padding.concat(overlay)
                 for y in ("In", "Out"):
                     curfade = getattr(self.options, f"{x}_fade{y}")
                     if curfade:
                         fade_settings = {}
-                        if not getattr(self.options, f"{x}_concat") and (not getattr(self.options, f"{x}_black") or (x, y) == ("intro", "Out") or (x, y) == ("outro", "In")):
+                        if not getattr(self.options, f"{x}_concat") and (not getattr(self.options, f"{x}_fade_black") or (x, y) == ("intro", "Out") or (x, y) == ("outro", "In")):
 
                             fade_settings["alpha"] = 1
                         if x == "intro" or self.options.outro_concat: # TODO: check logic
@@ -177,11 +208,15 @@ class VideoConverter:
 
                 if getattr(self.options, f"{x}_concat"):
                     to_concat[0 if x == "intro" else 1] = overlay
-                    concat_length += advanced[f"{x}_length"]
+                    concat_length += length
                 else:
                     background_video = background_video.overlay(overlay, eof_action=("pass" if x == "intro" else "repeat"))
+                    if getattr(self.options, f"{x}_sound"):
+                        to_mix = ffmpeg.input(media, t=f"{length}ms").audio
+                        if x == "outro":
+                            to_mix = ffmpeg.input("anullsrc", f="lavfi", t=f"{song_length_ms - length}ms").concat(to_mix, v=0, a=1)
 
-        audio_stream = ffmpeg.input(self.options.audio_file).audio
+                        audio_stream = ffmpeg.filter_([audio_stream, to_mix], "amix", normalize=0)
 
         bg_ratio = fractions.Fraction(*bg_size)
         ass_ratio = self.options.aspect_ratio
@@ -212,10 +247,12 @@ class VideoConverter:
 
         if to_concat[0]:
             filtered_video = to_concat[0].concat(filtered_video)
-            audio_stream = ffmpeg.input("anullsrc", f="lavfi", t=f"{self.options.intro_length}ms").audio.concat(audio_stream, v=0, a=1)
+            prepend_audio = ffmpeg.input(self.options.intro_media, t=f"{self.options.intro_length}ms").audio if self.options.intro_sound else ffmpeg.input("anullsrc", f="lavfi", t=f"{self.options.intro_length}ms").audio
+            audio_stream = prepend_audio.concat(audio_stream, v=0, a=1)
         if to_concat[1]:
             filtered_video = filtered_video.concat(to_concat[1])
-            audio_stream = audio_stream.concat(ffmpeg.input("anullsrc", f="lavfi", t=f"{self.options.outro_length}ms").audio, v=0, a=1)
+            append_audio = ffmpeg.input(self.options.outro_media, t=f"{self.options.outro_length}ms").audio if self.options.outro_sound else ffmpeg.input("anullsrc", f="lavfi", t=f"{self.options.outro_length}ms").audio
+            audio_stream = audio_stream.concat(append_audio, v=0, a=1)
 
         if self.options.audio_codec != 'flac':
             output_options['audio_bitrate'] = f"{self.options.audio_bitrate}k"

@@ -157,7 +157,7 @@ def convert_file():
             },
             'options': converters.AssOptions
         },
-        'ass2video': {
+        **({'ass2video': {
             'add_parser': {
                 'description': 'Render .ass subtitle to a video',
                 'argument_default': argparse.SUPPRESS
@@ -166,7 +166,7 @@ def convert_file():
             'output': lambda source, args, dest: converters.VideoConverter(source, dest, **vars(args)).run(),
             'output_opts': None,
             'options': converters.VideoOptions
-        },
+        }} if converters.ffmpeg_available else {}),
         'doblontxt2kbp': {
             'add_parser': {
                 'description': 'Convert Doblon full timing .txt file to .kbp',
@@ -227,7 +227,11 @@ def convert_file():
             name = field.name.replace("_", "-")
 
             additional_params = {}
-            if field.type == int | bool:
+            if field.metadata.get('existing_file'):
+                additional_params["type"] = existing_file
+            elif field.metadata.get('new_file'):
+                additional_params["type"] = new_file
+            elif field.type == int | bool:
                 additional_params["type"] = int_or_bool 
             elif field.type == str | None:
                 # TODO: more general
@@ -249,7 +253,6 @@ def convert_file():
             else:
                 help_text += repr(field.type)
             help_text += f" (default: {json.dumps(field.default_factory()) if isinstance(field.default, dataclasses._MISSING_TYPE) else field.default})"
-
             cur.add_argument(
                 f"--{name}",
                 gen_shortopt(p, name),
@@ -260,8 +263,9 @@ def convert_file():
                 **additional_params,
             )
 
-        cur.add_argument("source_file")
-        cur.add_argument("dest_file", nargs='?')
+        # Ideally these could use argparse.FileType but it doesn't support the newline options
+        cur.add_argument("source_file", type=existing_file, help='input file')
+        cur.add_argument("dest_file", nargs='?', type=new_file, help='output file')
 
     args = parser.parse_args()
 
@@ -315,6 +319,16 @@ def json_dict(strVal):
     if not isinstance(res, dict):
         raise ValueError("Expected argument to be json serialization of dict")
     return res
+
+def existing_file(strVal):
+    if not os.path.isfile(strVal):
+        raise ValueError("Expected argument to be existing file")
+    return strVal
+
+def new_file(strVal):
+    if not os.path.isdir(os.path.dirname(strVal) or '.'):
+        raise ValueError("Expected argument to be a valid place to write")
+    return strVal
 
 if __name__ == "__main__":
     convert_file()

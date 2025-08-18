@@ -74,10 +74,10 @@ def validated_types(func=None, /, *, coerce_types=True):
                         # Give coercion a try...
                         setter(t(comp))
                     elif not isinstance(comp, t):
-                        raise TypeError(f"{func.__qualname__} expected {param} to be of type {t.__name__}, found {type(comp).__name__}.")
+                        raise TypeError(f"{func.__qualname__} expected {param} to be of type {t}, found {type(comp)}.")
             result = func(*args, **kwargs)
             if (t := signature.return_annotation) is not inspect._empty and not isinstance(result, t):
-                raise TypeError(f"{func.__qualname__} was expected to return type {t.__name__}, found {type(result).__name__}.")
+                raise TypeError(f"{func.__qualname__} was expected to return type {t}, found {type(result)}.")
             return result
         return validate_wrapper
     if func:

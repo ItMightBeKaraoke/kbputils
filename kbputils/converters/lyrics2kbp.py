@@ -11,15 +11,15 @@ from .. import lrc
 @validators.validated_instantiation(replace="__init__")
 @dataclasses.dataclass
 class LyricsOptions:
-    title: str = ''
-    artist: str = ''
-    audio_file: str = ''
-    comments: str = 'Created with kbputils'
-    max_lines_per_page: int = 6
-    min_gap_for_new_page: int = 1000
-    display_before_wipe: int = 1000
-    remove_after_wipe: int = 500
-    template_file: str = ''
+    title: str = dataclasses.field(default='', metadata={"doc": "Title field to use in kbp file"})
+    artist: str = dataclasses.field(default='', metadata={"doc": "Artist field to use in kbp file"})
+    audio_file: str = dataclasses.field(default='', metadata={"doc": "Audio file associated with this subtitle", "existing_file": True})
+    comments: str = dataclasses.field(default='Created with kbputils', metadata={"doc": "Comment field to use in kbp file"})
+    max_lines_per_page: int = dataclasses.field(default=6, metadata={"doc": "Maximum number of lines to leave per page after initial page splitting rules applied"})
+    min_gap_for_new_page: int = dataclasses.field(default=1000, metadata={"doc": "Time in ms between the removal of a line and the display of the next before a page break is added"})
+    display_before_wipe: int = dataclasses.field(default=1000, metadata={"doc": "Amount of time in ms that a line is displayed before it starts wiping"})
+    remove_after_wipe: int = dataclasses.field(default=500, metadata={"doc": "Amount of time in ms that a line is removed after it finishes wiping"})
+    template_file: str | None = dataclasses.field(default=None, metadata={"doc": "KBS template or project file (.kbt or .kbp) containing the styles and project settings to use", "existing_file": True})
 
     @validators.validated_types
     @staticmethod
