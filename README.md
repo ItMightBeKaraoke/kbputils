@@ -30,6 +30,14 @@ Converters
     with open("outputfile.ass", "w", encoding='utf_8_sig') as f:
         doc.dump_file(f)
 
+### .ass to video (requires ffmpeg dependency)
+
+    video_converter = kbputils.VideoConverter(
+        "source_file.ass",
+        "dest_file.mp4",
+        audio_file="something.flac") # Numerous additional options, see ass2video CLI docs below
+    video_converter.run()
+
 ### Doblon .txt to .kbp
 
     doblon_converter = kbputils.DoblonTxtConverter(d) # Several options are available to tweak processing
@@ -130,40 +138,136 @@ Converter CLIs
                             Automatically fix syntax errors in .kbp file if they have an unambiguous interpretation (default:
                             False)
 
+### .ass to video file (if ffmpeg dependency is installed)
+
+    $ KBPUtils ass2video --help
+    usage: KBPUtils ass2video [-h] [--preview | --no-preview | -p] [--audio-file AUDIO_FILE] [--aspect-ratio ASPECT_RATIO]
+                              [--target-x TARGET_X] [--target-y TARGET_Y] [--background-color BACKGROUND_COLOR]
+                              [--background-media BACKGROUND_MEDIA]
+                              [--loop-background-video | --no-loop-background-video | -v] [--media-container MEDIA_CONTAINER]
+                              [--video-codec VIDEO_CODEC] [--video-quality VIDEO_QUALITY] [--audio-codec AUDIO_CODEC]
+                              [--audio-bitrate AUDIO_BITRATE] [--intro-media INTRO_MEDIA] [--outro-media OUTRO_MEDIA]
+                              [--intro-length INTRO_LENGTH] [--outro-length OUTRO_LENGTH] [--intro-fadeIn INTRO_FADEIN]
+                              [--outro-fadeIn OUTRO_FADEIN] [--intro-fadeOut INTRO_FADEOUT] [--outro-fadeOut OUTRO_FADEOUT]
+                              [--intro-concat | --no-intro-concat | -t] [--outro-concat | --no-outro-concat | -C]
+                              [--intro-fade-black | --no-intro-fade-black | -k]
+                              [--outro-fade-black | --no-outro-fade-black | -B] [--intro-sound | --no-intro-sound | -s]
+                              [--outro-sound | --no-outro-sound | -S] [--output-options OUTPUT_OPTIONS]
+                              source_file [dest_file]
+    
+    Render .ass subtitle to a video
+    
+    positional arguments:
+      source_file           input file
+      dest_file             output file
+    
+    options:
+      -h, --help            show this help message and exit
+      --preview, --no-preview, -p
+                            If set, do not run ffmpeg, only output the command that would be run (default: False)
+      --audio-file, -f AUDIO_FILE
+                            Audio track to use with video (default: None)
+      --aspect-ratio, -r ASPECT_RATIO
+                            Aspect ratio of rendered subtitle. This will be letterboxed if not equal to the aspect ratio of
+                            the output video (default: 25:18)
+      --target-x, -x TARGET_X
+                            Output video width (default: 1500)
+      --target-y, -y TARGET_Y
+                            Output video height (default: 1080)
+      --background-color, -c BACKGROUND_COLOR
+                            Background color for the video, as 24-bit RGB hex value (default: #000000)
+      --background-media, -m BACKGROUND_MEDIA
+                            Path to image or video to play in the background of the video (default: None)
+      --loop-background-video, --no-loop-background-video, -v
+                            If using a background video, leaving this unset will play the background video exactly once,
+                            repeating the last frame if shorter than the audio, or continuing past the end of the audio if
+                            longer. If set, the background video will instead loop exactly as many times needed (including
+                            fractionally) to match the audio. (default: False)
+      --media-container, -o MEDIA_CONTAINER
+                            Container file type to use for video output. If unspecified, will allow ffmpeg to infer from
+                            provided output filename (default: None)
+      --video-codec, -d VIDEO_CODEC
+                            Codec to use for video output (default: h264)
+      --video-quality, -q VIDEO_QUALITY
+                            Video encoding quality, uses a CRF scale so lower values are higher quality. Recommended settings
+                            are 15-35, though it can vary between codecs. Set to 0 for lossless (default: 23)
+      --audio-codec, -e AUDIO_CODEC
+                            Codec to use for audio output (default: aac)
+      --audio-bitrate, -b AUDIO_BITRATE
+                            Bitrate for audio output, in kbps (default: 256)
+      --intro-media, -i INTRO_MEDIA
+                            Image or video file to play at start of track, layered above the background, but below any
+                            subtitles (default: None)
+      --outro-media, -a OUTRO_MEDIA
+                            Image or video file to play at end of track, layered above the background, but below any subtitles
+                            (default: None)
+      --intro-length, -l INTRO_LENGTH
+                            Time in milliseconds to play the intro if a file was specified (default: 0)
+      --outro-length, -n OUTRO_LENGTH
+                            Time in milliseconds to play the outro if a file was specified (default: 0)
+      --intro-fadeIn, -I INTRO_FADEIN
+                            Time in milliseconds to fade in the intro (default: 0)
+      --outro-fadeIn, -F OUTRO_FADEIN
+                            Time in milliseconds to fade in the outro (default: 0)
+      --intro-fadeOut, -O INTRO_FADEOUT
+                            Time in milliseconds to fade out the intro (default: 0)
+      --outro-fadeOut, -u OUTRO_FADEOUT
+                            Time in milliseconds to fade out the outro (default: 0)
+      --intro-concat, --no-intro-concat, -t
+                            Play the intro before the audio/video starts instead of inserting at time 0 (default: False)
+      --outro-concat, --no-outro-concat, -C
+                            Play the outro before the audio/video starts instead of inserting at time 0 (default: False)
+      --intro-fade-black, --no-intro-fade-black, -k
+                            Fade in the video from a black screen instead of showing the background media immediately
+                            (default: False)
+      --outro-fade-black, --no-outro-fade-black, -B
+                            Fade the video out to a black screen instead of fading back to the background media (default:
+                            False)
+      --intro-sound, --no-intro-sound, -s
+                            Preserve audio in the intro (if video). Note that when using without the intro_concat option, this
+                            will mix without normalization, and may cause clipping (default: False)
+      --outro-sound, --no-outro-sound, -S
+                            Preserve audio in the outro (if video). Note that when using without the outro_concat option, this
+                            will mix without normalization, and may cause clipping (default: False)
+      --output-options, -P OUTPUT_OPTIONS
+                            Additional parameters to pass to ffmpeg (default: {"pix_fmt": "yuv420p"})
+
 ### Doblon .txt to .kbp
 
     $ KBPUtils doblontxt2kbp --help
     usage: KBPUtils doblontxt2kbp [-h] [--title TITLE] [--artist ARTIST] [--audio-file AUDIO_FILE] [--comments COMMENTS]
-                              [--max-lines-per-page MAX_LINES_PER_PAGE] [--min-gap-for-new-page MIN_GAP_FOR_NEW_PAGE]
-                              [--display-before-wipe DISPLAY_BEFORE_WIPE] [--remove-after-wipe REMOVE_AFTER_WIPE]
-                              [--template-file TEMPLATE_FILE]
-                              source_file [dest_file]
+                                  [--max-lines-per-page MAX_LINES_PER_PAGE] [--min-gap-for-new-page MIN_GAP_FOR_NEW_PAGE]
+                                  [--display-before-wipe DISPLAY_BEFORE_WIPE] [--remove-after-wipe REMOVE_AFTER_WIPE]
+                                  [--template-file TEMPLATE_FILE]
+                                  source_file [dest_file]
 
     Convert Doblon full timing .txt file to .kbp
-
+    
     positional arguments:
-      source_file
-      dest_file
-
+      source_file           input file
+      dest_file             output file
+    
     options:
       -h, --help            show this help message and exit
-      --title, -t TITLE     str (default: )
-      --artist, -a ARTIST   str (default: )
+      --title, -t TITLE     Title field to use in kbp file (default: )
+      --artist, -a ARTIST   Artist field to use in kbp file (default: )
       --audio-file, -f AUDIO_FILE
-                            str (default: )
+                            Audio file associated with this subtitle (default: )
       --comments, -c COMMENTS
-                            str (default: Created with kbputils Converted from Doblon .txt file)
+                            Comment field to use in kbp file (default: Created with kbputils)
       --max-lines-per-page, -p MAX_LINES_PER_PAGE
-                            int (default: 6)
+                            Maximum number of lines to leave per page after initial page splitting rules applied (default:
+                            6)
       --min-gap-for-new-page, -g MIN_GAP_FOR_NEW_PAGE
-                            int (default: 1000)
+                            Time in ms between the removal of a line and the display of the next before a page break is
+                            added (default: 1000)
       --display-before-wipe, -w DISPLAY_BEFORE_WIPE
-                            int (default: 1000)
+                            Amount of time in ms that a line is displayed before it starts wiping (default: 1000)
       --remove-after-wipe, -i REMOVE_AFTER_WIPE
-                            int (default: 500)
+                            Amount of time in ms that a line is removed after it finishes wiping (default: 500)
       --template-file, -l TEMPLATE_FILE
-                            str (default: )
-
+                            KBS template or project file (.kbt or .kbp) containing the styles and project settings to use
+                            (default: None)
 
 ### Enhanced .lrc to .kbp
 
@@ -173,31 +277,34 @@ Converter CLIs
                             [--display-before-wipe DISPLAY_BEFORE_WIPE] [--remove-after-wipe REMOVE_AFTER_WIPE]
                             [--template-file TEMPLATE_FILE]
                             source_file [dest_file]
-
-    Convert Enhanced .lrc to .kbp
-
+    
+    Convert Enhanced or MidiCo .lrc to .kbp
+    
     positional arguments:
-      source_file
-      dest_file
-
+      source_file           input file
+      dest_file             output file
+    
     options:
       -h, --help            show this help message and exit
-      --title, -t TITLE     str (default: )
-      --artist, -a ARTIST   str (default: )
+      --title, -t TITLE     Title field to use in kbp file (default: )
+      --artist, -a ARTIST   Artist field to use in kbp file (default: )
       --audio-file, -f AUDIO_FILE
-                            str (default: )
+                            Audio file associated with this subtitle (default: )
       --comments, -c COMMENTS
-                            str (default: Created with kbputils Converted from Enhanced LRC file)
+                            Comment field to use in kbp file (default: Created with kbputils)
       --max-lines-per-page, -p MAX_LINES_PER_PAGE
-                            int (default: 6)
+                            Maximum number of lines to leave per page after initial page splitting rules applied (default:
+                            6)
       --min-gap-for-new-page, -g MIN_GAP_FOR_NEW_PAGE
-                            int (default: 1000)
+                            Time in ms between the removal of a line and the display of the next before a page break is
+                            added (default: 1000)
       --display-before-wipe, -w DISPLAY_BEFORE_WIPE
-                            int (default: 1000)
+                            Amount of time in ms that a line is displayed before it starts wiping (default: 1000)
       --remove-after-wipe, -i REMOVE_AFTER_WIPE
-                            int (default: 500)
+                            Amount of time in ms that a line is removed after it finishes wiping (default: 500)
       --template-file, -l TEMPLATE_FILE
-                            str (default: )
+                            KBS template or project file (.kbt or .kbp) containing the styles and project settings to use
+                            (default: None)
 
 Utility CLIs
 -------------
