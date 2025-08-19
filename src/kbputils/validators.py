@@ -99,7 +99,7 @@ def validate_and_coerce_values(fields: typing.Mapping, key: str, value):
         elif not isinstance(value, t):
             raise TypeError(f"Expected {opt} to be of type {t}. Found {type(options[opt])}.")
     else:
-        raise TypeError(f"Unexpected field '{key}'. Possible fields are {self._fields.keys()}.")
+        raise TypeError(f"Unexpected field '{key}'. Possible fields are {fields.keys()}.")
 
     return value
 
