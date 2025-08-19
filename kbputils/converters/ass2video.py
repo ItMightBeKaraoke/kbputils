@@ -226,7 +226,7 @@ class VideoConverter:
                         if x == "outro":
                             to_mix = ffmpeg.input("anullsrc", f="lavfi", t=f"{song_length_ms - length}ms").concat(to_mix, v=0, a=1)
 
-                        audio_stream = audio_steam and ffmpeg.filter_([audio_stream, to_mix], "amix", normalize=0)
+                        audio_stream = audio_stream and ffmpeg.filter_([audio_stream, to_mix], "amix", normalize=0)
 
         bg_ratio = fractions.Fraction(*bg_size)
         ass_ratio = self.options.aspect_ratio
