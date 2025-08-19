@@ -125,7 +125,15 @@ class VideoConverter:
 
     def run(self):
         # TODO: handle exception
-        song_length_str = ffmpeg.probe(self.options.audio_file)['format']['duration']
+        if self.options.audio_file:
+            song_length_str = ffmpeg.probe(self.options.audio_file)['format']['duration']
+        else:
+            # If there's no audio file provided, just take the largest timestamp from the subtitle and add a few seconds
+            # Yes the 3 seconds is hardcoded, but who's making a karaoke video without the audio anyway?!
+            import ass
+            with open(self.assfile) as f:
+                song_length_str = str(max(x.end for x in ass.parse_file(f).events).total_seconds() + 3)
+            print("No audio file provided, estimating length from .ass file")
         song_length_ms = int(float(song_length_str) * 1000)
         output_options = {}
         base_assfile = os.path.basename(self.assfile)
@@ -164,7 +172,7 @@ class VideoConverter:
         del song_length_str
         ### Note: past this point, song_length_ms represents the confirmed output file duration rather than just the audio length
 
-        audio_stream = ffmpeg.input(self.options.audio_file).audio
+        audio_stream = ffmpeg.input(self.options.audio_file).audio if self.options.audio_file else None
 
         to_concat = [None, None]
         concat_length = 0
@@ -216,7 +224,7 @@ class VideoConverter:
                         if x == "outro":
                             to_mix = ffmpeg.input("anullsrc", f="lavfi", t=f"{song_length_ms - length}ms").concat(to_mix, v=0, a=1)
 
-                        audio_stream = ffmpeg.filter_([audio_stream, to_mix], "amix", normalize=0)
+                        audio_stream = audio_steam and ffmpeg.filter_([audio_stream, to_mix], "amix", normalize=0)
 
         bg_ratio = fractions.Fraction(*bg_size)
         ass_ratio = self.options.aspect_ratio
@@ -248,11 +256,11 @@ class VideoConverter:
         if to_concat[0]:
             filtered_video = to_concat[0].concat(filtered_video)
             prepend_audio = ffmpeg.input(self.options.intro_media, t=f"{self.options.intro_length}ms").audio if self.options.intro_sound else ffmpeg.input("anullsrc", f="lavfi", t=f"{self.options.intro_length}ms").audio
-            audio_stream = prepend_audio.concat(audio_stream, v=0, a=1)
+            audio_stream = audio_stream and prepend_audio.concat(audio_stream, v=0, a=1)
         if to_concat[1]:
             filtered_video = filtered_video.concat(to_concat[1])
             append_audio = ffmpeg.input(self.options.outro_media, t=f"{self.options.outro_length}ms").audio if self.options.outro_sound else ffmpeg.input("anullsrc", f="lavfi", t=f"{self.options.outro_length}ms").audio
-            audio_stream = audio_stream.concat(append_audio, v=0, a=1)
+            audio_stream = audio_stream and audio_stream.concat(append_audio, v=0, a=1)
 
         if self.options.audio_codec != 'flac':
             output_options['audio_bitrate'] = f"{self.options.audio_bitrate}k"
@@ -281,7 +289,7 @@ class VideoConverter:
             **self.options.output_options
         })
 
-        ffmpeg_options = ffmpeg.output(filtered_video, audio_stream, self.vidfile, **output_options).overwrite_output().get_args()
+        ffmpeg_options = ffmpeg.output(filtered_video, *([audio_stream] if audio_stream else []), self.vidfile, **output_options).overwrite_output().get_args()
         assdir = os.path.dirname(self.assfile)
         print(f'cd "{assdir}"')
         # Only quote empty or suitably complicated arguments in the command
