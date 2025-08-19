@@ -15,7 +15,7 @@ classifiers = [
     "License :: OSI Approved :: BSD License"
 ]
 requires-python = ">= 3.11"
-[project.optional_dependencies]
+[project.optional-dependencies]
 ffmpeg = ["ffmpeg-python"]
 [project.scripts]
 KBPUtils = "kbputils.cli:convert_file"
