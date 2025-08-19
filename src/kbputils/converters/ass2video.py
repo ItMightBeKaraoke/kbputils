@@ -297,7 +297,7 @@ class VideoConverter:
         # Only quote empty or suitably complicated arguments in the command
         print("ffmpeg" + " " + " ".join(x if re.fullmatch(r"[\w\-/:\.]+", x) else f'"{x}"' for x in ffmpeg_options))
         #q = QProcess(program="ffmpeg", arguments=ffmpeg_options, workingDirectory=os.path.dirname(assfile))
-        subprocess_opts = {"args": ["ffmpeg"] + ffmpeg_options, "cwd": assdir}
+        subprocess_opts = {"args": ["ffmpeg"] + ffmpeg_options, "cwd": assdir, "length": song_length_ms}
         if self.options.preview:
             return subprocess_opts
         else:
