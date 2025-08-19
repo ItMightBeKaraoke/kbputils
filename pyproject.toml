@@ -23,6 +23,6 @@ KBPUtils = "kbputils.cli:convert_file"
 requires = ["setuptools >= 61.0.0"]
 build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
-include = ["kbputils"]
+where = ["src"]
 [tool.setuptools.dynamic]
 version = {attr = "kbputils.__version__"}
