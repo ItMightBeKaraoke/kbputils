@@ -1,6 +1,8 @@
 import re
 import charset_normalizer
 
+__all__ = ['LRC', 'MLRCLine']
+
 class LRC:
     def __init__(self, lrcfile: str):
         self.lines = []

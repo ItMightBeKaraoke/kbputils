@@ -1,6 +1,8 @@
 import re
 import charset_normalizer
 
+__all__ = ['DoblonTxt']
+
 class DoblonTxt:
     def __init__(self, txtfile: str):
         lines = []

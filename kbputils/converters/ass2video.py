@@ -9,6 +9,8 @@ import types
 from .._ffmpegcolor import ffmpeg_color
 from .. import validators
 
+__all__ = ['Ratio', 'VideoOptions', 'MediaType', 'Dimension', 'VideoConverter']
+
 class Ratio(fractions.Fraction):
     def __new__(cls, *args, **kwargs):
         if isinstance(args[0], str) and ':' in args[0]:

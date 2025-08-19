@@ -7,6 +7,7 @@ from .. import validators
 from .. import doblontxt
 from .. import lrc
 
+__all__ = ['LyricsOptions', 'LyricsConverter', 'DoblonTxtConverter', 'LRCConverter']
 
 @validators.validated_instantiation(replace="__init__")
 @dataclasses.dataclass
