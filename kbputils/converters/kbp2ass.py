@@ -75,8 +75,8 @@ class AssOptions:
     experimental_spacing: bool = dataclasses.field(default=False, metadata={"doc": 'Calculate the "style 1" spacing instead of using Arial 12 bold default (only works for select fonts)'})
     #overflow_spacing: float # TODO? spacing value in styles that will apply for overflow (default 0). Multiplied by font height or based on default style?
 
-    @validators.validated_types
     @staticmethod
+    @validators.validated_types
     def __assert_valid(key: str, value):
         return validators.validate_and_coerce_values(AssOptions._fields, key, value)
 
@@ -120,8 +120,8 @@ class AssConverter:
     # unfortunately .ass cannot reliably do that, as the margins are only used
     # for soft word wrapping. To letterbox, scale to a resolution with aspect
     # ratio the same as CDG, then letterbox when rendering the video
-    @validators.validated_types
     @staticmethod
+    @validators.validated_types
     def rescale_coords(x: int, y: int, target_x: int, target_y: int, allow_float: bool = False, border: bool = True) -> tuple:
         cdg_res = (300, 216) if border else (288, 192)
         res = (x * target_x / cdg_res[0], y * target_y / cdg_res[1])
@@ -135,8 +135,8 @@ class AssConverter:
     # These are scaled by a factor of the minimum of the scaling factor of x
     # and y to avoid going off screen
     # If font is true, additional scaling factor of 1.4 is applied to account for line height vs cap height
-    @validators.validated_types
     @staticmethod
+    @validators.validated_types
     def rescale_scalar(size: float, target_x: int, target_y: int, allow_float: bool = True, border: bool = True, font: bool = False) -> int | float:
         cdg_res = (300, 216) if border else (288, 192)
         scale = min(target_x / cdg_res[0], target_y / cdg_res[1])

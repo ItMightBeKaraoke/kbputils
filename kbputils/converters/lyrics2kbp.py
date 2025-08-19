@@ -7,7 +7,7 @@ from .. import validators
 from .. import doblontxt
 from .. import lrc
 
-__all__ = ['LyricsOptions', 'LyricsConverter', 'DoblonTxtConverter', 'LRCConverter']
+__all__ = ['LyricsOptions', 'LyricsConverter', 'DoblonTxtConverter', 'LRCConverter', 'DoblonTxtOptions', 'LRCOptions']
 
 @validators.validated_instantiation(replace="__init__")
 @dataclasses.dataclass
@@ -22,8 +22,8 @@ class LyricsOptions:
     remove_after_wipe: int = dataclasses.field(default=500, metadata={"doc": "Amount of time in ms that a line is removed after it finishes wiping"})
     template_file: str | None = dataclasses.field(default=None, metadata={"doc": "KBS template or project file (.kbt or .kbp) containing the styles and project settings to use", "existing_file": True})
 
-    @validators.validated_types
     @staticmethod
+    @validators.validated_types
     def __assert_valid(key: str, value):
         return validators.validate_and_coerce_values(LyricsOptions._fields, key, value)
 
@@ -44,8 +44,8 @@ class LyricsConverter:
     def __getattr__(self, attr):
         return getattr(self.options, attr)
 
-    @validators.validated_types(coerce_types=False)
     @staticmethod
+    @validators.validated_types(coerce_types=False)
     def syl2kbp(syl: str) -> str:
         if syl.endswith("-"):
             syl = syl[:-1]
