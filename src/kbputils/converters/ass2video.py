@@ -148,7 +148,7 @@ class VideoConverter:
             bg_size = Dimension(visual_stream["width"],visual_stream["height"])
             background_type = self.get_stream_types(bginfo)
             if MediaType.VIDEO in background_type:
-                if self.options.loop_bg:
+                if self.options.loop_background_video:
                     # Repeat background video until audio is complete
                     background_video = ffmpeg.input(self.options.background_media, stream_loop=-1, t=song_length_str).video
                 else:
