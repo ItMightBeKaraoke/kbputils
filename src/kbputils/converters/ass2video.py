@@ -152,7 +152,7 @@ class VideoConverter:
                     # Repeat background video until audio is complete
                     background_video = ffmpeg.input(self.options.background_media, stream_loop=-1, t=song_length_str).video
                 else:
-                    bgv_length_ms = int(float(bginfo['format']['duration'] * 1000))
+                    bgv_length_ms = int(float(bginfo['format']['duration']) * 1000)
                     background_video = ffmpeg.input(self.options.background_media).video
                     # If the background video is shorter than the audio (and possibly subtitle), repeat the last frame
                     if bgv_length_ms < song_length_ms:
