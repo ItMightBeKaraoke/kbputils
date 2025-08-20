@@ -271,8 +271,8 @@ class VideoConverter:
         if self.options.video_quality == 0:
             if self.options.video_codec == "libvpx-vp9":
                 output_options["lossless"]=1
-            elif self.options.video_codec == "libx265":
-                output_options["x265-params"]="lossless=1"
+            elif self.options.video_codec in ("libx265", "libsvtav1"):
+                output_options[f"{self.options.video_codec[3:]}-params"]="lossless=1"
             else:
                 output_options["crf"]=0
         else:
@@ -280,6 +280,8 @@ class VideoConverter:
 
         if self.options.video_codec == "libvpx-vp9":
             output_options["video_bitrate"] = 0 # Required for the format to use CRF only
+
+        if self.options.video_codec in ("libvpx-vp9", "libaom-av1"):
             output_options["row-mt"] = 1 # Speeds up encode for most multicore systems
 
         if self.options.media_container:
