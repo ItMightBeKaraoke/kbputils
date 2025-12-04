@@ -11,7 +11,7 @@ from . import validators
 __all__ = ['KBPErrorCode', 'KBPErrorDetails', 'KBPActionType', 'KBPTimingTarget', 'KBPTimingAnchor',
            'KBPActionParams', 'KBPAction', 'KBPFile', 'KBPPalette', 'KBPStyle', 'KBPStyleParseError',
            'KBPStyleCollection', 'KBPLineHeader', 'KBPSyllable', 'KBPLine', 'KBPPageParseError',
-           'KBPPage', 'KBPImage']
+           'KBPPage', 'KBPImage', 'KBPPlaybackSettings']
 
 @enum.unique
 class KBPErrorCode(enum.Enum):
@@ -346,6 +346,7 @@ class KBPFile:
 
     def __init__(self, kbpFile=None, **kwargs):
         self.pages = []
+        self.mods = KBPPlaybackSettings()
         self.images = []
         self.lyrics = [] # Unsynced lyrics
         self.onload_modifications = [] # Indicates whether a syntax error was automatically corrected during parsing
@@ -421,6 +422,11 @@ class KBPFile:
                     cursor = [1, slice(0,2)]
                     data = kbpLines[x+1]
                     self.images.append(KBPImage.from_string(data))
+
+                elif divider and line == "MODS":
+                    cursor = [1, slice(0,2)]
+                    data = kbpLines[x+1]
+                    self.mods = KBPPlaybackSettings.from_string(data)
 
                 elif divider and line == "HEADERV2":
                     in_header = True
@@ -558,6 +564,7 @@ class KBPFile:
                     kbpFile.write(page.toKBP())
                 for image in self.images:
                     kbpFile.write(image.toKBP())
+                kbpFile.write(self.mods.toKBP())
                 kbpFile.write(KBPFile.DIVIDER + "\n\n")
             else:
                 kbpFile.write(KBPFile.DIVIDER + "\n")
@@ -881,6 +888,36 @@ class KBPStyleCollection(dict):
     def toKBP(self):
         return KBPStyleCollection.HEADER + "".join(x.toKBP() for x in self.values() if x.style_no > 0) + "  StyleEnd\n\n"
         
+@validators.validated_instantiation
+class KBPPlaybackSettings(typing.NamedTuple):
+    pitch_enabled: bool = False
+    pitch_value: int = 0
+    speed_enabled: bool = False
+    speed_value: int = 0
+
+    def __bool__(self):
+        return any(self)
+
+    def from_string(data: str):
+        fields = [int(x) for x in data.split('/')]
+        return KBPPlaybackSettings(bool(fields[0]), fields[1], bool(fields[2]), fields[3])
+
+    def from_logical(pitch_enabled: bool, pitch_steps: float, speed_enabled: bool, speed_percent: int):
+        return KBPPlayBackSettings(pitch_enabled, round(pitch_steps*2)*50, speed_enabled, (speed_percent-100)*100)
+
+    def to_logical(self):
+        return {
+            "pitch_enabled": self.pitch_enabled,
+            "pitch_steps": self.pitch_value / 100,
+            "speed_enabled": self.speed_enabled,
+            "speed_percent": 100 + self.speed_value // 100
+          }
+
+    def toKBP(self):
+        if self:
+            return "\n".join((KBPFile.DIVIDER, "MODS", "/".join(str(int(x)) for x in self))) + "\n\n"
+        else:
+            return ""
 
 @validators.validated_instantiation
 class KBPLineHeader(typing.NamedTuple):
