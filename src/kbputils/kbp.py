@@ -903,7 +903,7 @@ class KBPPlaybackSettings(typing.NamedTuple):
         return KBPPlaybackSettings(bool(fields[0]), fields[1], bool(fields[2]), fields[3])
 
     def from_logical(pitch_enabled: bool, pitch_steps: float, speed_enabled: bool, speed_percent: int):
-        return KBPPlayBackSettings(pitch_enabled, round(pitch_steps*2)*50, speed_enabled, (speed_percent-100)*100)
+        return KBPPlaybackSettings(pitch_enabled, round(pitch_steps*2)*50, speed_enabled, (speed_percent-100)*100)
 
     def to_logical(self):
         return {
