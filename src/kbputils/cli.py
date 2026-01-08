@@ -149,7 +149,8 @@ def convert_file():
                 # Handle enum types
                 additional_params["type"] = field.type.__getitem__
                 additional_params["choices"] = field.type.__members__.values()
-            else:
+            # Apparently in Python 3.14+, BooleanOptionalAction no longer supports a type parameter
+            elif field.type != bool:
                 additional_params["type"] = field.type
 
             help_text = ''
