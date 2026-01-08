@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-__version__ = '0.2.7'
+__version__ = '0.2.8'
 
 __all__ = ['KBPFile', 'AssConverter', 'DoblonTxtConverter', 'LRCConverter', 'KBPAction', 'KBPActionType', 'KBPTimingTarget', 'KBPTimingAnchor', 'KBPActionParams']
 

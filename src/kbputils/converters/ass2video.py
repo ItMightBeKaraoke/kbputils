@@ -29,7 +29,7 @@ class VideoOptions:
     aspect_ratio: Ratio = dataclasses.field(default=Ratio(300,216), metadata={"doc": "Aspect ratio of rendered subtitle. This will be letterboxed if not equal to the aspect ratio of the output video"})
     target_x: int = dataclasses.field(default=1500, metadata={"doc": "Output video width"})
     target_y: int = dataclasses.field(default=1080, metadata={"doc": "Output video height"})
-    background_color: str = dataclasses.field(default="#000000", metadata={"doc": "Background color for the video, as 24-bit RGB hex value"})
+    background_color: str = dataclasses.field(default="#000000", metadata={"doc": "Background color for the video, as 24-bit RGB hex value, or 32-bit ARGB, optionally prefixed with '#'"})
     background_media: str | None = dataclasses.field(default=None, metadata={"doc": "Path to image or video to play in the background of the video"})
     loop_background_video: bool = dataclasses.field(default=False, metadata={"doc": "If using a background video, leaving this unset will play the background video exactly once, repeating the last frame if shorter than the audio, or continuing past the end of the audio if longer. If set, the background video will instead loop exactly as many times needed (including fractionally) to match the audio."})
     media_container: str | None = dataclasses.field(default=None, metadata={"doc": "Container file type to use for video output. If unspecified, will allow ffmpeg to infer from provided output filename"})
@@ -139,6 +139,7 @@ class VideoConverter:
         song_length_ms = int(float(song_length_str) * 1000)
         output_options = {}
         base_assfile = os.path.basename(self.assfile)
+        use_alpha = False
 
         if self.options.background_media:
             # TODO: handle exception
@@ -169,7 +170,15 @@ class VideoConverter:
         else:
             background_type = MediaType.COLOR
             bg_size = Dimension(self.options.target_x, self.options.target_y)
-            background_video = ffmpeg.input(f"color=color={self.options.background_color.lstrip('#')}:r=60:s={bg_size}", f="lavfi", t=song_length_str)
+            bgcolor = self.options.background_color.lstrip('#')
+            if len(bgcolor) == 8:
+                # ARGB to RGB@A
+                bgcolor = f"{bgcolor[2:]}@0x{bgcolor[0:2]}"
+                use_alpha = True
+            # Need to use source filter instead of lavfi input for format=rgba to work
+            background_video = ffmpeg_color(color=bgcolor, r=60, s=bg_size, d=song_length_str)
+            if use_alpha:
+                background_video = background_video.filter_("format", "rgba")
 
         del song_length_str
         ### Note: past this point, song_length_ms represents the confirmed output file duration rather than just the audio length
@@ -253,7 +262,8 @@ class VideoConverter:
                 **ass_move
             )
         else:
-            filtered_video = background_video.filter_("ass", base_assfile)
+            ass_opts = {"alpha": 1} if use_alpha else {}
+            filtered_video = background_video.filter_("ass", base_assfile, **ass_opts)
 
         if to_concat[0]:
             filtered_video = to_concat[0].concat(filtered_video)
@@ -299,8 +309,8 @@ class VideoConverter:
         # Only quote empty or suitably complicated arguments in the command
         print("ffmpeg" + " " + " ".join(x if re.fullmatch(r"[\w\-/:\.]+", x) else f'"{x}"' for x in ffmpeg_options))
         #q = QProcess(program="ffmpeg", arguments=ffmpeg_options, workingDirectory=os.path.dirname(assfile))
-        subprocess_opts = {"args": ["ffmpeg"] + ffmpeg_options, "cwd": assdir, "length": song_length_ms}
+        subprocess_opts = {"args": ["ffmpeg"] + ffmpeg_options, "cwd": assdir}
         if self.options.preview:
-            return subprocess_opts
+            return subprocess_opts | {"length": song_length_ms}
         else:
             subprocess.run(subprocess_opts.pop("args"), **subprocess_opts)
