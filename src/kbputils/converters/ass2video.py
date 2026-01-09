@@ -183,7 +183,8 @@ class VideoConverter:
         del song_length_str
         ### Note: past this point, song_length_ms represents the confirmed output file duration rather than just the audio length
 
-        audio_stream = ffmpeg.input(self.options.audio_file).audio if self.options.audio_file else None
+        # ffmpeg-python doesn't handle 0 input streams, which is possible if there is no audio and color background
+        audio_stream = ffmpeg.input(self.options.audio_file).audio if self.options.audio_file else ffmpeg.input("anullsrc", f="lavfi")
 
         to_concat = [None, None]
         concat_length = 0
@@ -274,7 +275,7 @@ class VideoConverter:
             append_audio = ffmpeg.input(self.options.outro_media, t=f"{self.options.outro_length}ms").audio if self.options.outro_sound else ffmpeg.input("anullsrc", f="lavfi", t=f"{self.options.outro_length}ms").audio
             audio_stream = audio_stream and audio_stream.concat(append_audio, v=0, a=1)
 
-        if self.options.audio_codec != 'flac':
+        if self.options.audio_codec != 'flac' and self.options.audio_file:
             output_options['audio_bitrate'] = f"{self.options.audio_bitrate}k"
 
         # Lossless handling
@@ -283,7 +284,7 @@ class VideoConverter:
                 output_options["lossless"]=1
             elif self.options.video_codec in ("libx265", "libsvtav1"):
                 output_options[f"{self.options.video_codec[3:]}-params"]="lossless=1"
-            else:
+            elif self.options.video_codec != "png":
                 output_options["crf"]=0
         else:
             output_options["crf"]=self.options.video_quality
@@ -297,13 +298,18 @@ class VideoConverter:
         if self.options.media_container:
             output_options["f"] = self.options.media_container
 
+        if self.options.audio_file:
+            output_options["c:a"] = self.options.audio_codec
+        else:
+            output_options["an"] = None
+
+
         output_options.update({
-            "c:a": self.options.audio_codec,
             "c:v": self.options.video_codec,
             **self.options.output_options
         })
 
-        ffmpeg_options = ffmpeg.output(filtered_video, *([audio_stream] if audio_stream else []), self.vidfile, **output_options).overwrite_output().get_args()
+        ffmpeg_options = ffmpeg.output(filtered_video, audio_stream, self.vidfile, **output_options).overwrite_output().get_args()
         assdir = os.path.dirname(self.assfile)
         print(f'cd "{assdir}"')
         # Only quote empty or suitably complicated arguments in the command
