@@ -33,7 +33,7 @@ Unknown (e.g. "0")
 Dithering (true="-1", false="0")
 Resize method (fit=0, stretch=1, crop=2)
 Alignment (top-left=1, top-right=3, bottom-right=9)
-Unknown (e.g. "0")
+Border color (palette index 0-16)
 Crop alignment
 Transition duration (CDG ticks)
 Text (one line, "{#}"-separated within an entry, "{@}" between entries):
@@ -122,7 +122,7 @@ class Slide:
     dither: bool
     resize_method: ResizeMethod
     alignment: ImageAlignment
-    # TODO figure out unknown field
+    border_color: int
     crop_alignment: ImageAlignment
     transition_duration: int
     text: list[SlideTextLine]
@@ -139,6 +139,7 @@ class Slide:
                 dither = data[28] != "0",
                 resize_method = ResizeMethod(int(data[29])),
                 alignment = ImageAlignment(int(data[30])),
+                border_color = int(data[31]), # Leaving index in case we need to check if it's index 0 (e.g. bg transparency)
                 crop_alignment = ImageAlignment(int(data[32])),
                 transition_duration = int(data[33]),
                 text = SlideTextLine.lines_from_string(data[34]),
@@ -160,3 +161,14 @@ class SHWFile:
         for slide_data in itertools.batched(line, n=40):
             if len(slide_data) == 40:
                 self.slides.append(Slide.from_strings(slide_data))
+
+
+def shwcolor_to_hex(shwcolor: int, to24bit: bool = False):
+    r = shwcolor >> 20
+    g = (shwcolor >> 12) % 16
+    b = (shwcolor >> 4) % 16
+    if extendto24:
+        r *= 0x11
+        g *= 0x11
+        b *= 0x11
+    return hex(r) + hex(g)[2:] + hex(b)[2:]
