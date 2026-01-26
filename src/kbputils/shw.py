@@ -14,7 +14,7 @@ import itertools
 
 Header: "[Slideshow]"
 Settings (one line, colon-separated):
-    - unknown (e.g. "4")
+    - Total number of slides (including the first one that must be empty)
     - slideshow length type (minimized=0, add_time=1, fixed_len=2)
     - duration (CDG ticks, 300 per second)
     - last CDG filename (full path or relative to SHW)
@@ -72,6 +72,7 @@ def dataclass_init_from_strings(klass: type, values: typing.List[str]):
 
 @dataclasses.dataclass
 class SlideshowSettings:
+    # TODO incorporate number of slides value? Perhaps return it in from_string so it can be used in validation
     duration_type: DurationType
     duration: int # Used only with duration_types ADD_TIME and FIXED, CDG ticks
     cdg_filename: str
