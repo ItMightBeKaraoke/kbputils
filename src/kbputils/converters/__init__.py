@@ -9,3 +9,4 @@ except:
     ffmpeg_available = False
 if ffmpeg_available:
     from .ass2video import *
+    from .shw2video import *

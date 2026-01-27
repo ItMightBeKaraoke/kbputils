@@ -1,4 +1,5 @@
 from . import kbp
+from . import shw
 from . import doblontxt
 from . import lrc
 from . import converters
@@ -64,16 +65,30 @@ def convert_file():
             },
             'options': converters.AssOptions
         },
-        **({'ass2video': {
-            'add_parser': {
-                'description': 'Render .ass subtitle to a video',
-                'argument_default': argparse.SUPPRESS
-            },
-            'input': None,
-            'output': lambda source, args, dest: converters.VideoConverter(source, dest, **vars(args)).run(),
-            'output_opts': None,
-            'options': converters.VideoOptions
-        }} if converters.ffmpeg_available else {}),
+        **(
+            {
+                'ass2video': {
+                    'add_parser': {
+                        'description': 'Render .ass subtitle to a video',
+                        'argument_default': argparse.SUPPRESS
+                    },
+                    'input': None,
+                    'output': lambda source, args, dest: converters.VideoConverter(source, dest, **vars(args)).run(),
+                    'output_opts': None,
+                    'options': converters.VideoOptions
+                },
+                'shw2video': {
+                    'add_parser': {
+                        'description': 'Create a video from a KBS Slideshow (.shw) file',
+                        'argument_default': argparse.SUPPRESS
+                    },
+                    'input': shw.SHWFile,
+                    'output': lambda source, args, dest: converters.SHWConverter(source, dest, **vars(args)).run(),
+                    'output_opts': None,
+                    'options': converters.SHWConvertOptions
+                },
+            } if converters.ffmpeg_available else {}
+        ),
         'doblontxt2kbp': {
             'add_parser': {
                 'description': 'Convert Doblon full timing .txt file to .kbp',

@@ -152,6 +152,7 @@ class SHWFile:
 
     def __init__(self, file):
         self.slides = []
+        self.filename = file
         f = open(file, "r", encoding="utf-8")
         line = (x.rstrip('\r\n') for x in f)
         if next(line) != SHWFile.HEADER:
@@ -161,14 +162,17 @@ class SHWFile:
         for slide_data in itertools.batched(line, n=40):
             if len(slide_data) == 40:
                 self.slides.append(Slide.from_strings(slide_data))
+        f.close()
 
 
-def shwcolor_to_hex(shwcolor: int, to24bit: bool = False):
+def shwcolor_to_hex(shwcolor: int, to24bit: bool = True):
     r = shwcolor >> 20
     g = (shwcolor >> 12) % 16
     b = (shwcolor >> 4) % 16
-    if extendto24:
+    n=1
+    if to24bit:
         r *= 0x11
         g *= 0x11
         b *= 0x11
-    return hex(r) + hex(g)[2:] + hex(b)[2:]
+        n = 2
+    return f"0x{r:0{n}x}{g:0{n}x}{b:0{n}x}"

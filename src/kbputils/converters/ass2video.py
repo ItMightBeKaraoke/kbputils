@@ -8,8 +8,9 @@ import subprocess
 import types
 from .._ffmpegcolor import ffmpeg_color
 from .. import validators
+from ..utils import Dimension
 
-__all__ = ['Ratio', 'VideoOptions', 'MediaType', 'Dimension', 'VideoConverter']
+__all__ = ['Ratio', 'VideoOptions', 'MediaType', 'VideoConverter']
 
 class Ratio(fractions.Fraction):
     def __new__(cls, *args, **kwargs):
@@ -70,20 +71,6 @@ class MediaType(enum.Flag):
     IMAGE = enum.auto()
     VIDEO = enum.auto()
     AUDIO = enum.auto()
-
-class Dimension(tuple):
-    @validators.validated_types(coerce_types=False)
-    def __new__(cls, x: str|int, y: str|int):
-        return super().__new__(cls, (int(x), int(y)))
-
-    def width(self) -> int:
-        return self[0]
-
-    def height(self) -> int:
-        return self[1]
-
-    def __repr__(self) -> str:
-        return f"{self[0]}x{self[1]}"
 
 class VideoConverter:
     @validators.validated_types
