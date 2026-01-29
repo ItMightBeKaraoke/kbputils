@@ -13,6 +13,7 @@ from ..utils import Dimension
 class SHWConvertOptions:
     target_x: int = dataclasses.field(default=1500, metadata={"doc": "Output video width"})
     target_y: int = dataclasses.field(default=1080, metadata={"doc": "Output video height"})
+    border: bool = dataclasses.field(default=True, metadata={"doc": "Render CDG border"})
 
     @validators.validated_types
     @staticmethod
@@ -54,7 +55,7 @@ class SHWConverter:
                 bg = bg.overlay(overlay)
             elif slide.text:
                 for line in slide.text:
-                    # TODO style, margin, etc
+                    # TODO style, margin, border, etc
                     # TODO transition: draw on transparent background and apply fade?
                     bg = bg.filter_("drawtext", 
                                     text=line.text,
@@ -64,6 +65,7 @@ class SHWConverter:
                                     text_align="T+"+line.alignment,
                                     y_align="font",
                                     x=kbp2ass.AssConverter.rescale_scalar(line.across, *output_size),
+                                    boxw=output_size.width(),
                                     y=kbp2ass.AssConverter.rescale_scalar(line.down, *output_size),
                                    )
             video = video.concat(bg) if video else bg

@@ -23,7 +23,7 @@ Unknown (e.g. "40")
 
     == Each slide ==
 
-Palette (16 lines): each color is a 24-bit RGB decimal
+Palette (16 lines): each color is a 24-bit decimal with every other nibble being used as a color channel to make a 12-bit color (i.e. hex value is BXGXRX where B, G, R represent the color channels and X are discarded)
 Unknown X 7 (e.g. all "0")
 Image filename (empty if slide 0 or text slide)
 Transition Name
@@ -40,7 +40,7 @@ Text (one line, "{#}"-separated within an entry, "{@}" between entries):
     - Across
     - Down
     - Text
-    - Color (24-bit RGB decimal)
+    - Color (see color description above) - note that if the color is not in the palette, it would normally be replaced with the closest available, or multiple close ones, applying dithering if that's enabled
     - Font face
     - Font size
     - Font style ("B"old, "I"talic, "U"nderline, "S"trikeout, "A"llcaps, "J"agged (not smooth)) - letters concatenated together
@@ -166,9 +166,9 @@ class SHWFile:
 
 
 def shwcolor_to_hex(shwcolor: int, to24bit: bool = True):
-    r = shwcolor >> 20
+    b = shwcolor >> 20
     g = (shwcolor >> 12) % 16
-    b = (shwcolor >> 4) % 16
+    r = (shwcolor >> 4) % 16
     n=1
     if to24bit:
         r *= 0x11
