@@ -70,14 +70,25 @@ def validated_types(func=None, /, *, coerce_types=True):
                     # whether they were option or mandatory
                     continue 
                 if (t := signature.parameters[param].annotation) is not inspect._empty:
+                    # Handle typing.Self annotation - assume it must be an instance of type(args[0])
+                    # This can probably break with inheritance
+                    # Note this can be a Union, so handle appropriately
+                    if typing.Self in (tmp := getattr(t, '__args__', (t,))):
+                        if pos_idx == 0:
+                            continue
+                        else:
+                            t = typing.Union[*(type(args[0]) if x == typing.Self else x for x in tmp)]
                     if coerce_types and not isinstance(comp, t) and callable(t):
                         # Give coercion a try...
                         setter(t(comp))
                     elif not isinstance(comp, t):
                         raise TypeError(f"{func.__qualname__} expected {param} to be of type {t}, found {type(comp)}.")
             result = func(*args, **kwargs)
-            if (t := signature.return_annotation) is not inspect._empty and not isinstance(result, t):
-                raise TypeError(f"{func.__qualname__} was expected to return type {t}, found {type(result)}.")
+            if (t := signature.return_annotation) is not inspect._empty:
+                if typing.Self in (tmp := getattr(t, '__args__', (t,))):
+                    t = typing.Union[*(type(args[0]) if x == typing.Self else x for x in tmp)]
+                if not isinstance(result, t):
+                    raise TypeError(f"{func.__qualname__} was expected to return type {t}, found {type(result)}.")
             return result
         return validate_wrapper
     if func:

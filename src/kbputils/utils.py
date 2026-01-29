@@ -1,16 +1,28 @@
+import collections
+import typing
 from . import validators
 
-class Dimension(tuple):
+class Dimension(collections.namedtuple("Dimension", ('width', 'height'))):
+    __annotations__  = {'width': int, 'height': int}
+
     @validators.validated_types(coerce_types=False)
-    def __new__(cls, x: str|int, y: str|int):
-        return super().__new__(cls, (int(x), int(y)))
-
-    def width(self) -> int:
-        return self[0]
-
-    def height(self) -> int:
-        return self[1]
+    def __new__(cls, x: str|int, y: str|int|None = None):
+        if y is None:
+            (x,y) = x.split("x")
+        return super().__new__(cls, int(x), int(y))
 
     def __repr__(self) -> str:
         return f"{self[0]}x{self[1]}"
 
+    @validators.validated_types(coerce_types=False)
+    def __add__(self, other: typing.Self | int) -> typing.Self:
+        if isinstance(other, int):
+            return Dimension(*(x + other for x in self))
+        else:
+            return Dimension(self[0] + other[0], self[1] + other[1])
+
+    def __neg__(self) -> typing.Self:
+        return Dimension(*(-x for x in self))
+
+    def __sub__(self, other: typing.Self | int) -> typing.Self:
+        return self + -other

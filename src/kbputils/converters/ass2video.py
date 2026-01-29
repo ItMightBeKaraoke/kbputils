@@ -230,12 +230,12 @@ class VideoConverter:
 
         if bg_ratio > ass_ratio:
             # letterbox sides
-            ass_size = Dimension(round(bg_size.height() * ass_ratio), bg_size.height())
-            ass_move = {"x": round((bg_size.width() - ass_size.width())/2)}
+            ass_size = Dimension(round(bg_size.height * ass_ratio), bg_size.height)
+            ass_move = {"x": round((bg_size.width - ass_size.width)/2)}
         elif bg_ratio < ass_ratio:
             # letterbox top/bottom
-            ass_size = Dimension(bg_size.width(), round(bg_size.width() / ass_ratio))
-            ass_move = {"y": round((bg_size.height() - ass_size.height())/2)}
+            ass_size = Dimension(bg_size.width, round(bg_size.width / ass_ratio))
+            ass_move = {"y": round((bg_size.height - ass_size.height)/2)}
         else:
             ass_size = bg_size
             # ass_move = ""
