@@ -58,6 +58,37 @@ class SHWConverter:
         self.shwfile = source
         self.vidfile = os.path.abspath(dest)
 
+    # Take a text string, requested font face, and an SHW style string and
+    # return a dict of the text with caps applied if requested, and font face
+    # with style transformations applied suitable for drawtext/fontconfig
+    # Supported: bold, italic, allcaps
+    # Not supported: strike-through, underline, jagged (not smooth)
+    @staticmethod
+    def style_text(text: str, font_face: str, style: str) -> dict[str, str]:
+        if 'A' in style:
+            text = text.upper()
+        font_transformations = {
+                #TODO determine the preferred way to specify these.
+                # Symbolic constants for bold and italic can apparently be
+                # specified with or without their associated property, as well
+                # as with "style". Not clear why the style option even exists if
+                # it's not even needed - back compat?
+                # https://freedesktop.org/software/fontconfig/fontconfig-user.html#AEN21
+                #"B": "weight=bold",
+                "B": "bold",
+                #"I": "slant=italic",
+                "I": "italic",
+                # Doesn't seem to do anything, so removing for now
+                #"J": "hintstyle=hintnone",
+            }
+        for x in font_transformations:
+            if x in style:
+                # ffmpeg-python already escapes the :, but apparently it needs to be double-escaped
+                # It actually ends up triple-escaped this way somehow, but it still seems to work
+                font_face += "\\:" + font_transformations[x]
+        return {"text": text, "fontfile": font_face}
+
+
     def run(self):
         oldcwd = os.getcwd()
         os.chdir(os.path.dirname(self.shwfile.filename))
@@ -82,13 +113,12 @@ class SHWConverter:
                 bg = bg.overlay(overlay, x="(W-w)/2", y="(H-h)/2", remove_me=filter_id())
             elif slide.text:
                 for line in slide.text:
-                    # TODO style, margin, border, etc
+                    # TODO margin, scaling for different types of borders, etc
                     # TODO transition: draw on transparent background and apply fade?
                     bg = bg.drawtext(
-                                    text=line.text,
+                                    **SHWConverter.style_text(line.text, line.font_face, line.font_style),
                                     expansion="none",
                                     fontcolor=shw.shwcolor_to_hex(line.color),
-                                    font=line.font_face,
                                     fontsize=kbp2ass.AssConverter.rescale_scalar(line.font_size, *viewport_size, font=True),
                                     text_align="T+"+line.alignment,
                                     y_align="font",
