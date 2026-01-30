@@ -3,6 +3,7 @@ import re
 import typing
 import io
 import os.path
+import sys
 import dataclasses
 import enum
 import itertools
@@ -19,7 +20,7 @@ Settings (one line, colon-separated):
     - duration (CDG ticks, 300 per second)
     - last CDG filename (full path or relative to SHW)
     - 10 empty entries?
-Unknown (e.g. "40")
+Number of config lines per slide (always should be 40)
 
     == Each slide ==
 
@@ -32,9 +33,9 @@ Viewing duration (CDG ticks)
 Unknown (e.g. "0")
 Dithering (true="-1", false="0")
 Resize method (fit=0, stretch=1, crop=2)
-Alignment (top-left=1, top-right=3, bottom-right=9)
+Alignment (top-left=1, top-right=3, ...,  bottom-right=9)
 Border color (palette index 0-16)
-Crop alignment
+Crop alignment (see Alignment)
 Transition duration (CDG ticks)
 Text (one line, "{#}"-separated within an entry, "{@}" between entries):
     - Across
@@ -72,7 +73,7 @@ def dataclass_init_from_strings(klass: type, values: typing.List[str]):
 
 @dataclasses.dataclass
 class SlideshowSettings:
-    # TODO incorporate number of slides value? Perhaps return it in from_string so it can be used in validation
+    slideshow_length: int # Total number of slides indicated in metadata
     duration_type: DurationType
     duration: int # Used only with duration_types ADD_TIME and FIXED, CDG ticks
     cdg_filename: str
@@ -81,7 +82,7 @@ class SlideshowSettings:
     @staticmethod
     def from_string(s: str) -> typing.Self:
         vals = s.split(":")
-        return SlideshowSettings(DurationType(int(vals[1])), int(vals[2]), vals[3])
+        return SlideshowSettings(int(vals[0]), DurationType(int(vals[1])), int(vals[2]), vals[3])
 
 class ResizeMethod(enum.Enum):
     FIT = 0 # letterbox to aspect ratio then apply alignment
@@ -149,6 +150,7 @@ class Slide:
 class SHWFile:
 
     HEADER = '[Slideshow]'
+    SHW_SLIDE_LINES = 40 # Number of entries per slide in the SHW format
 
     def __init__(self, file):
         self.slides = []
@@ -158,11 +160,23 @@ class SHWFile:
         if next(line) != SHWFile.HEADER:
             raise ValueError("File doesn't start with the [Slideshow] header")
         self.settings = SlideshowSettings.from_string(next(line))
-        next(line) # ignore unknown
-        for slide_data in itertools.batched(line, n=40):
-            if len(slide_data) == 40:
+
+        # It's unclear yet if there are multiple iterations of the SHW format.
+        # If anyone has sample files that don't have 40 specified as the lines
+        # per slide value, I'll need to see them to determine if other changes
+        # are needed to parse the format
+        if int(next(line)) != SHWFile.SHW_SLIDE_LINES:
+            raise ValueError(f"Unknown SHW file format. Please report a bug if this is a valid file.")
+        slides_processed=0
+        for slide_data in itertools.batched(line, n=SHWFile.SHW_SLIDE_LINES):
+            if len(slide_data) == SHWFile.SHW_SLIDE_LINES and slides_processed < self.settings.slideshow_length:
                 self.slides.append(Slide.from_strings(slide_data))
+                slides_processed += 1
+            else:
+                break
         f.close()
+        if slides_processed < self.settings.slideshow_length:
+            print(f"File was supposed to contain {self.settings.slideshow_length} slides, but only {slides_processed} were found.", file=sys.stderr)
 
 
 def shwcolor_to_hex(shwcolor: int, to24bit: bool = True):
