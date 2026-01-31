@@ -67,6 +67,13 @@ class SHWConverter:
     def style_text(text: str, font_face: str, style: str) -> dict[str, str]:
         if 'A' in style:
             text = text.upper()
+        # This was a cute idea but ultimately fails because it only works on fonts that include these combining marks
+        #combining_characters = {
+        #        "S": "\u0336",
+        #        "U": "\u0332"
+        #    }
+        #if to_combine := "".join(map(lambda x: combining_characters[x], combining_characters.keys() & set(style))):
+        #    text = unicodedata.normalize("NFC", "".join(map(lambda x: x+to_combine, f" {text}"))+" ")
         font_transformations = {
                 #TODO determine the preferred way to specify these.
                 # Symbolic constants for bold and italic can apparently be
@@ -99,6 +106,16 @@ class SHWConverter:
             border_width = cdg_cursorheight if self.options.border == SHWBorderStyle.EQUAL else cdg_cursorheight // 2
             viewport_size = output_size - Dimension(2*border_width, 2*cdg_cursorheight)
 
+        aspect_handling = {
+                            shw.ResizeMethod.FIT: "decrease",
+                            shw.ResizeMethod.CROP: "increase",
+                            shw.ResizeMethod.STRETCH: "disable",
+                          }
+        alignment_handling = {
+                               -1: "0",
+                                0: "({}-{})/2",
+                                1: "{}-{}"
+                             }
         for slide in self.shwfile.slides:
             full_duration = (slide.view_duration + slide.transition_duration)/300
             bg = ffmpeg.input(f"color={shw.shwcolor_to_hex(slide.palette[0])}:r=60:s={viewport_size}", f="lavfi", t=full_duration)
@@ -107,10 +124,17 @@ class SHWConverter:
                 # TODO fade out (needs next slide's fade in)
                 # TODO some transition support other than fade
                 # TODO position/scaling
+                alignment = slide.crop_alignment if slide.resize_method == shw.ResizeMethod.CROP else slide.alignment
                 overlay = ffmpeg.input(slide.image_filename, framerate=60, loop=1, t=full_duration)
-                overlay = overlay.filter_("scale", s=viewport_size, force_original_aspect_ratio="decrease")
+                overlay = overlay.filter_("scale", s=viewport_size, force_original_aspect_ratio=aspect_handling[slide.resize_method])
                 overlay = overlay.filter_("fade", t="in", d=slide.transition_duration/300, alpha=1)
-                bg = bg.overlay(overlay, x="(W-w)/2", y="(H-h)/2", remove_me=filter_id())
+                bg = bg.overlay(
+                                 overlay,
+                                 x=alignment_handling[slide.alignment.x_value()].format("W", "w"),
+                                 y=alignment_handling[slide.alignment.y_value()].format("H", "h"),
+                                 eval='init',
+                                 remove_me=filter_id()
+                               )
             elif slide.text:
                 for line in slide.text:
                     # TODO margin, scaling for different types of borders, etc

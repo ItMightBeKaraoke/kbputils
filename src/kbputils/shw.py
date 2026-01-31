@@ -67,6 +67,14 @@ class ImageAlignment(enum.Enum):
     BOTTOM_CENTER = 8
     BOTTOM_RIGHT = 9
 
+    # returns -1 for left, 0 for center, 1 for right
+    def x_value(self):
+        return (self.value % 3) - 2
+
+    # returns -1 for top, 0 for middle, 1 for bottom
+    def y_value(self):
+        return ((self.value - 1)// 3) - 1
+
 # Helper to construct a dataclass when all its member types can be coerced from strings
 def dataclass_init_from_strings(klass: type, values: typing.List[str]):
     return klass(*(x.type(y) for x,y in zip(dataclasses.fields(klass), values)))
