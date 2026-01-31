@@ -123,7 +123,6 @@ class SHWConverter:
                 # TODO path management stuff?
                 # TODO fade out (needs next slide's fade in)
                 # TODO some transition support other than fade
-                # TODO position/scaling
                 alignment = slide.crop_alignment if slide.resize_method == shw.ResizeMethod.CROP else slide.alignment
                 overlay = ffmpeg.input(slide.image_filename, framerate=60, loop=1, t=full_duration)
                 overlay = overlay.filter_("scale", s=viewport_size, force_original_aspect_ratio=aspect_handling[slide.resize_method])
@@ -137,18 +136,17 @@ class SHWConverter:
                                )
             elif slide.text:
                 for line in slide.text:
-                    # TODO margin, scaling for different types of borders, etc
                     # TODO transition: draw on transparent background and apply fade?
                     bg = bg.drawtext(
                                     **SHWConverter.style_text(line.text, line.font_face, line.font_style),
                                     expansion="none",
                                     fontcolor=shw.shwcolor_to_hex(line.color),
-                                    fontsize=kbp2ass.AssConverter.rescale_scalar(line.font_size, *viewport_size, font=True),
+                                    fontsize=kbp2ass.AssConverter.rescale_scalar(line.font_size, *viewport_size, font=True, border=False),
                                     text_align="T+"+line.alignment,
                                     y_align="font",
-                                    x=kbp2ass.AssConverter.rescale_scalar(line.across, *viewport_size),
+                                    x=kbp2ass.AssConverter.rescale_scalar(line.across, *viewport_size, border=False),
                                     boxw=viewport_size.width,
-                                    y=kbp2ass.AssConverter.rescale_scalar(line.down, *viewport_size),
+                                    y=kbp2ass.AssConverter.rescale_scalar(line.down, *viewport_size, border=False),
                                    )
             if self.options.border:
                 border = ffmpeg.input(f"color={shw.shwcolor_to_hex(slide.palette[slide.border_color])}:r=60:s={output_size}",
