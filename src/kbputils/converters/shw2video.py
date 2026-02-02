@@ -116,17 +116,23 @@ class SHWConverter:
                                 0: "({}-{})/2",
                                 1: "{}-{}"
                              }
-        for slide in self.shwfile.slides:
+        fadeout = None
+        for idx, slide in enumerate(self.shwfile.slides):
             full_duration = (slide.view_duration + slide.transition_duration)/300
-            bg = ffmpeg.input(f"color={shw.shwcolor_to_hex(slide.palette[0])}:r=60:s={viewport_size}", f="lavfi", t=full_duration)
+            bgcolor = f"color={shw.shwcolor_to_hex(slide.palette[0])}:r=60:s={viewport_size}"
+            bg = ffmpeg.input(bgcolor, f="lavfi", t=full_duration)
+            prev=fadeout
+            if idx + 1 < len(self.shwfile.slides):
+                fadeout_len = self.shwfile.slides[idx+1].transition_duration/300
+                fadeout = ffmpeg.input(bgcolor, f="lavfi", t=fadeout_len)
+            else:
+                fadeout = None
             if slide.image_filename:
                 # TODO path management stuff?
-                # TODO fade out (needs next slide's fade in)
                 # TODO some transition support other than fade
                 alignment = slide.crop_alignment if slide.resize_method == shw.ResizeMethod.CROP else slide.alignment
                 overlay = ffmpeg.input(slide.image_filename, framerate=60, loop=1, t=full_duration)
                 overlay = overlay.filter_("scale", s=viewport_size, force_original_aspect_ratio=aspect_handling[slide.resize_method])
-                overlay = overlay.filter_("fade", t="in", d=slide.transition_duration/300, alpha=1)
                 bg = bg.overlay(
                                  overlay,
                                  x=alignment_handling[slide.alignment.x_value()].format("W", "w"),
@@ -134,9 +140,19 @@ class SHWConverter:
                                  eval='init',
                                  remove_me=filter_id()
                                )
+                if fadeout:
+                    fadeout_overlay = ffmpeg.input(slide.image_filename, framerate=60, loop=1, t=fadeout_len)
+                    fadeout_overlay = fadeout_overlay.filter_("scale", s=viewport_size, force_original_aspect_ratio=aspect_handling[slide.resize_method])
+                    fadeout = fadeout.overlay(
+                                     fadeout_overlay,
+                                     x=alignment_handling[slide.alignment.x_value()].format("W", "w"),
+                                     y=alignment_handling[slide.alignment.y_value()].format("H", "h"),
+                                     eval='init',
+                                     remove_me=filter_id()
+                                   )
             elif slide.text:
                 for line in slide.text:
-                    # TODO transition: draw on transparent background and apply fade?
+                    # TODO fix text escaping - may need to switch from drawtext to subtitle/ass or use a temporary text file
                     bg = bg.drawtext(
                                     **SHWConverter.style_text(line.text, line.font_face, line.font_style),
                                     expansion="none",
@@ -148,13 +164,35 @@ class SHWConverter:
                                     boxw=viewport_size.width,
                                     y=kbp2ass.AssConverter.rescale_scalar(line.down, *viewport_size, border=False),
                                    )
+                    if fadeout:
+                        fadeout = fadeout.drawtext(
+                                        **SHWConverter.style_text(line.text, line.font_face, line.font_style),
+                                        expansion="none",
+                                        fontcolor=shw.shwcolor_to_hex(line.color),
+                                        fontsize=kbp2ass.AssConverter.rescale_scalar(line.font_size, *viewport_size, font=True, border=False),
+                                        text_align="T+"+line.alignment,
+                                        y_align="font",
+                                        x=kbp2ass.AssConverter.rescale_scalar(line.across, *viewport_size, border=False),
+                                        boxw=viewport_size.width,
+                                        y=kbp2ass.AssConverter.rescale_scalar(line.down, *viewport_size, border=False),
+                                       )
             if self.options.border:
                 border = ffmpeg.input(f"color={shw.shwcolor_to_hex(slide.palette[slide.border_color])}:r=60:s={output_size}",
                                       f="lavfi",
-                                      t=full_duration
+                                      t=full_duration,
                                      )
                 bg = border.overlay(bg, x=border_width, y=cdg_cursorheight, remove_me=filter_id())
-            video = video.concat(bg) if video else bg
+                if fadeout:
+                    fadeout_border = ffmpeg.input(f"color={shw.shwcolor_to_hex(slide.palette[slide.border_color])}:r=60:s={output_size}",
+                                          f="lavfi",
+                                          t=fadeout_len,
+                                         )
+                    fadeout = fadeout_border.overlay(fadeout, x=border_width, y=cdg_cursorheight, remove_me=filter_id())
+            # TODO switch to xfade which should simplify this whole thing a lot
+            bg = bg.filter_("fade", t="in", d=slide.transition_duration/300, alpha=1, remove_me=filter_id())
+            if prev:
+                bg = prev.overlay(bg, remove_me=filter_id())
+            video = video.concat(bg, remove_me=filter_id()) if video else bg
         ffmpeg_options = ffmpeg.output(video, self.vidfile).get_args()
         cleanup_args(ffmpeg_options, "remove_me")
         print(f"cd {os.getcwd()}")
