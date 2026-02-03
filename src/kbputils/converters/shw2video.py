@@ -6,6 +6,7 @@ import re
 import enum
 import tempfile
 import subprocess
+import pathlib
 from .. import shw
 from . import kbp2ass # TODO maybe some of the static helper methods need to move out of here
 from .. import validators
@@ -103,7 +104,7 @@ class SHWConverter:
 
     def run(self, return_ffmpeg_object=False):
         oldcwd = os.getcwd()
-        os.chdir(os.path.dirname(self.shwfile.filename))
+        os.chdir(pathlib.Path(self.shwfile.filename).parent)
         video = None
         viewport_size = output_size = Dimension(self.options.target_x, self.options.target_y)
         if self.options.border:
@@ -207,7 +208,7 @@ class SHWConverter:
 
 
         if return_ffmpeg_object:
-            return {"ffmpeg_obj": video, "pre": lambda x: cleanup_args(x, "remove_me"), "post": lambda: tempdir.cleanup()}
+            return {"ffmpeg_obj": video, "pre": lambda x: cleanup_args(x, "remove_me"), "post": lambda: tmpdir.cleanup()}
         else:
             output_options = {}
             if self.options.video_quality == 0:
