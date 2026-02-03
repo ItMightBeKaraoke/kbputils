@@ -1,5 +1,7 @@
 import collections
 import typing
+import pathlib
+import os
 from . import validators
 
 class Dimension(collections.namedtuple("Dimension", ('width', 'height'))):
@@ -26,3 +28,15 @@ class Dimension(collections.namedtuple("Dimension", ('width', 'height'))):
 
     def __sub__(self, other: typing.Self | int) -> typing.Self:
         return self + -other
+
+if os.name == "nt":
+    def abspath(path: str) -> pathlib.Path:
+        return pathlib.Path(path).absolute()
+
+else:
+    import subprocess
+    def abspath(path: str) -> pathlib.Path:
+        wpath = pathlib.PureWindowsPath(path)
+        if wpath.is_absolute():
+            return pathlib.Path(subprocess.run(["winepath", "-u", path], capture_output=True, check=True).stdout)
+        return pathlib.Path(wpath).absolute()

@@ -7,6 +7,7 @@ import sys
 import dataclasses
 import enum
 import itertools
+from . import kbp
 
 """
 === SHW File layout ===
@@ -198,3 +199,18 @@ def shwcolor_to_hex(shwcolor: int, to24bit: bool = True):
         b *= 0x11
         n = 2
     return f"0x{r:0{n}x}{g:0{n}x}{b:0{n}x}"
+
+def shwfile_or_kbpfile(file) -> SHWFile | kbp.KBPFile:
+    res = None
+    error = None
+    order = (SHWFile, kbp.KBPFile) if os.path.splitext(file)[1].lower() == ".shw" else (kbp.KBPFile, SHWFile)
+    for cls in order:
+        try:
+            res = cls(file)
+            break
+        except e:
+            if not error:
+                error = e
+    if not res:
+        raise error
+    return res

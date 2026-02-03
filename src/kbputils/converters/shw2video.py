@@ -9,8 +9,11 @@ import subprocess
 import pathlib
 from .. import shw
 from . import kbp2ass # TODO maybe some of the static helper methods need to move out of here
+from .. import kbp
 from .. import validators
 from ..utils import Dimension
+from ..utils import abspath
+from .._ffmpegcolor import ffmpeg_color
 
 class SHWBorderStyle(enum.Enum):
     NONE = enum.auto()
@@ -59,10 +62,13 @@ def cleanup_args(args, name):
 
 class SHWConverter:
     @validators.validated_types
-    def __init__(self, source: shw.SHWFile, dest: str, options: SHWConvertOptions | None = None, **kwargs):
+    def __init__(self, source: shw.SHWFile | kbp.KBPFile, dest: str, options: SHWConvertOptions | None = None, **kwargs):
         self.options = options or SHWConvertOptions()
         self.options.update(**kwargs)
-        self.shwfile = source
+        if isinstance(source, shw.SHWFile):
+            self.shwfile = source
+        else:
+            self.kbpfile = source
         self.vidfile = os.path.abspath(dest)
 
     # Take a text string, requested font face, and an SHW style string and
@@ -102,9 +108,91 @@ class SHWConverter:
                 font_face += "\\:" + font_transformations[x]
         return {"text": text, "fontfile": font_face}
 
-    def run(self, return_ffmpeg_object=False):
+    def run(self):
+        tmpdirs = []
+        if hasattr(self, "kbpfile"):
+            oldcwd = os.getcwd()
+            if hasattr(self.kbpfile, "filename"):
+                os.chdir(pathlib.Path(self.kbpfile.filename).parent)
+            bgcolor = self.kbpfile.colors.as_rgb24()[0]
+            # TODO kbp border
+            size = Dimension(self.options.target_x, self.options.target_y)
+            video = ffmpeg.input(f"color={bgcolor}:s={size}:r=60", f="lavfi")
+            # else unlikely to find any of the shw files, but we'll try anyway...
+            candidates = {}
+            for idx, img in enumerate(self.kbpfile.images):
+                cdg_file = abspath(img.filename)
+                shw_file = cdg_file.parent.joinpath(cdg_file.stem + ".shw")
+                if not shw_file.exists():
+                    if not candidates:
+                        for x in pathlib.Path.glob("**/*.shw", case_sensitive=False):
+                            try:
+                                s = shw.SHWFile(x)
+                                candidates[pathlib.PureWindowsPath(s.cdg_filename).name] = x
+                            except:
+                                pass
+                    if cdg_file.name in candidates:
+                        shw_file = candidates[cdg_file.name]
+                    else:
+                        raise FileNotFoundError(shw_file)
+                overlay, tmpdir = self._convert(shw.SHWFile(shw_file))
+                tmpdirs.append(tmpdir)
+                if img.start > 1:
+                    overlay = ffmpeg_color(color="000000@0", r=60, s="1920x1080", d=img.start/100.0).filter_("format", "rgba").concat(overlay)
+                if idx == len(self.kbpfile.images) - 1:
+                    eof_action = "endall"
+                elif img.leaveonscreen:
+                    eof_action = "repeat"
+                else:
+                    eof_action = "pass"
+                # Add a couple frames of background if the slide isn't supposed to be left on screen, so the last frame can still be repeated
+                if idx == len(self.kbpfile.images) - 1 and not img.leaveonscreen:
+                    overlay = overlay.concat(ffmpeg_color(color="000000@0", r=60, s="1920x1080", d="20ms").filter_("format", "rgba"))
+                video = video.overlay(overlay, eof_action = eof_action)
+            os.chdir(oldcwd)
+        else:
+            video, tmpdir = self._convert()
+            tmpdirs.append(tmpdir)
+
+        output_options = {}
+        if self.options.video_quality == 0:
+            if self.options.video_codec == "libvpx-vp9":
+                output_options["lossless"]=1
+            elif self.options.video_codec in ("libx265", "libsvtav1"):
+                output_options[f"{self.options.video_codec[3:]}-params"]="lossless=1"
+            elif self.options.video_codec != "png":
+                output_options["crf"]=0
+        else:
+            output_options["crf"]=self.options.video_quality
+
+        if self.options.video_codec == "libvpx-vp9":
+            output_options["video_bitrate"] = 0 # Required for the format to use CRF only
+
+        if self.options.video_codec in ("libvpx-vp9", "libaom-av1"):
+            output_options["row-mt"] = 1 # Speeds up encode for most multicore systems
+
+        if self.options.media_container:
+            output_options["f"] = self.options.media_container
+
+        output_options.update({
+            "c:v": self.options.video_codec,
+            **self.options.output_options
+        })
+
+        ffmpeg_options = ffmpeg.output(video, self.vidfile, **output_options).overwrite_output().get_args()
+        cleanup_args(ffmpeg_options, "remove_me")
+        print(f"cd {os.getcwd()}")
+        print("ffmpeg" + " " + " ".join(x if re.fullmatch(r"[\w\-/:\.]+", x) else f'"{x}"' for x in ffmpeg_options))
+        subprocess.run(["ffmpeg"] + ffmpeg_options)
+        for tmpdir in tmpdirs:
+            if tmpdir:
+                tmpdir.cleanup()
+
+    def _convert(self, shwfile: shw.SHWFile | None = None) -> tuple:
+        if not shwfile:
+            shwfile = self.shwfile
         oldcwd = os.getcwd()
-        os.chdir(pathlib.Path(self.shwfile.filename).parent)
+        os.chdir(pathlib.Path(shwfile.filename).parent)
         video = None
         viewport_size = output_size = Dimension(self.options.target_x, self.options.target_y)
         if self.options.border:
@@ -145,11 +233,11 @@ class SHWConverter:
 
         offset = 0
         tmpdir = None
-        for idx, slide in enumerate(self.shwfile.slides):
+        for idx, slide in enumerate(shwfile.slides):
             transition_len = transition_durations.get(slide.transition_name, transition_durations["default"]) or slide.transition_duration/300
 
-            if idx + 1 < len(self.shwfile.slides):
-                nxt = self.shwfile.slides[idx+1]
+            if idx + 1 < len(shwfile.slides):
+                nxt = shwfile.slides[idx+1]
                 fadeout_len = transition_durations.get(nxt.transition_name, transition_durations["default"]) or nxt.transition_duration/300
             else:
                 fadeout_len = 0.0
@@ -159,7 +247,7 @@ class SHWConverter:
             if slide.image_filename:
                 # TODO path management stuff?
                 alignment = slide.crop_alignment if slide.resize_method == shw.ResizeMethod.CROP else slide.alignment
-                overlay = ffmpeg.input(slide.image_filename, framerate=60, loop=1, t=full_duration)
+                overlay = ffmpeg.input(str(abspath(slide.image_filename)), framerate=60, loop=1, t=full_duration)
                 overlay = overlay.filter_("scale", s=viewport_size, force_original_aspect_ratio=aspect_handling[slide.resize_method])
                 bg = bg.overlay(
                                  overlay,
@@ -206,40 +294,6 @@ class SHWConverter:
                 video = bg
             offset += full_duration - fadeout_len
 
-
-        if return_ffmpeg_object:
-            return {"ffmpeg_obj": video, "pre": lambda x: cleanup_args(x, "remove_me"), "post": lambda: tmpdir.cleanup()}
-        else:
-            output_options = {}
-            if self.options.video_quality == 0:
-                if self.options.video_codec == "libvpx-vp9":
-                    output_options["lossless"]=1
-                elif self.options.video_codec in ("libx265", "libsvtav1"):
-                    output_options[f"{self.options.video_codec[3:]}-params"]="lossless=1"
-                elif self.options.video_codec != "png":
-                    output_options["crf"]=0
-            else:
-                output_options["crf"]=self.options.video_quality
-
-            if self.options.video_codec == "libvpx-vp9":
-                output_options["video_bitrate"] = 0 # Required for the format to use CRF only
-
-            if self.options.video_codec in ("libvpx-vp9", "libaom-av1"):
-                output_options["row-mt"] = 1 # Speeds up encode for most multicore systems
-
-            if self.options.media_container:
-                output_options["f"] = self.options.media_container
-
-            output_options.update({
-                "c:v": self.options.video_codec,
-                **self.options.output_options
-            })
-
-            ffmpeg_options = ffmpeg.output(video, self.vidfile, **output_options).overwrite_output().get_args()
-            cleanup_args(ffmpeg_options, "remove_me")
-            print(f"cd {os.getcwd()}")
-            print("ffmpeg" + " " + " ".join(x if re.fullmatch(r"[\w\-/:\.]+", x) else f'"{x}"' for x in ffmpeg_options))
-            subprocess.run(["ffmpeg"] + ffmpeg_options)
-            tmpdir.cleanup()
-
         os.chdir(oldcwd)
+
+        return (video, tmpdir)

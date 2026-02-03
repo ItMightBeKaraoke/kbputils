@@ -79,10 +79,10 @@ def convert_file():
                 },
                 'shw2video': {
                     'add_parser': {
-                        'description': 'Create a video from a KBS Slideshow (.shw) file',
+                        'description': 'Create a video from a KBS Slideshow (.shw) or multiple slideshows referenced in a .kbp file',
                         'argument_default': argparse.SUPPRESS
                     },
-                    'input': shw.SHWFile,
+                    'input': shw.shwfile_or_kbpfile,
                     'output': lambda source, args, dest: converters.SHWConverter(source, dest, **vars(args)).run(),
                     'output_opts': None,
                     'options': converters.SHWConvertOptions
