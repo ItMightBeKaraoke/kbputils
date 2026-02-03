@@ -4,6 +4,8 @@ import os
 import types
 import re
 import enum
+import tempfile
+import subprocess
 from .. import shw
 from . import kbp2ass # TODO maybe some of the static helper methods need to move out of here
 from .. import validators
@@ -26,6 +28,10 @@ class SHWConvertOptions:
     target_x: int = dataclasses.field(default=1500, metadata={"doc": "Output video width"})
     target_y: int = dataclasses.field(default=1080, metadata={"doc": "Output video height"})
     border: SHWBorderStyle = dataclasses.field(default=SHWBorderStyle.CDG, metadata={"doc": "Type of border to apply to the video"})
+    media_container: str | None = dataclasses.field(default=None, metadata={"doc": "Container file type to use for video output. If unspecified, will allow ffmpeg to infer from provided output filename"})
+    video_codec: str = dataclasses.field(default="h264", metadata={"doc": "Codec to use for video output"})
+    video_quality: int = dataclasses.field(default=23, metadata={"doc": "Video encoding quality, uses a CRF scale so lower values are higher quality. Recommended settings are 15-35, though it can vary between codecs. Set to 0 for lossless"})
+    output_options: dict = dataclasses.field(default_factory=lambda: {"pix_fmt": "yuv420p"}, metadata={"doc": "Additional parameters to pass to ffmpeg"})
 
     @validators.validated_types
     @staticmethod
@@ -95,8 +101,7 @@ class SHWConverter:
                 font_face += "\\:" + font_transformations[x]
         return {"text": text, "fontfile": font_face}
 
-
-    def run(self):
+    def run(self, return_ffmpeg_object=False):
         oldcwd = os.getcwd()
         os.chdir(os.path.dirname(self.shwfile.filename))
         video = None
@@ -116,17 +121,40 @@ class SHWConverter:
                                 0: "({}-{})/2",
                                 1: "{}-{}"
                              }
-        fadeout = None
+        transitions = {
+                        "Fade": ["fade", "fade"],
+                        "Circle": ["circleopen", "circleclose"],
+                        "Clock (Single)": ["radial", "radial"], # No counterclockwise option
+                        "Diagonal (Bottom Left)": ["diagonaltr", "diagonalbl"],
+                        "Diagonal (Top Left)": ["diagonalbr", "diagonaltl"],
+                        "Left to Right": ["wiperight", "wipeleft"],
+                        "Random Snow": ["dissolve", "dissolve"],
+                        "Smooth Scroll (Horizontal)": ["slideleft", "slideright"],
+                        "Smooth Scroll (Vertical)": ["slideup", "slidedown"],
+                        "Scroll (Horizontal)": ["slideleft", "slideright"],
+                        "Scroll (Vertical)": ["slideup", "slidedown"],
+                        "Top to Bottom": ["wipedown", "wipeup"],
+                      }
+
+        transition_durations = {
+                                 "Fade": None, # Use specified transition duration
+                                 "Clear Screen": 0.1,
+                                 "default": 2.0,
+                               }
+
+        offset = 0
+        tmpdir = None
         for idx, slide in enumerate(self.shwfile.slides):
-            full_duration = (slide.view_duration + slide.transition_duration)/300
-            bgcolor = f"color={shw.shwcolor_to_hex(slide.palette[0])}:r=60:s={viewport_size}"
-            bg = ffmpeg.input(bgcolor, f="lavfi", t=full_duration)
-            prev=fadeout
+            transition_len = transition_durations.get(slide.transition_name, transition_durations["default"]) or slide.transition_duration/300
+
             if idx + 1 < len(self.shwfile.slides):
-                fadeout_len = self.shwfile.slides[idx+1].transition_duration/300
-                fadeout = ffmpeg.input(bgcolor, f="lavfi", t=fadeout_len)
+                nxt = self.shwfile.slides[idx+1]
+                fadeout_len = transition_durations.get(nxt.transition_name, transition_durations["default"]) or nxt.transition_duration/300
             else:
-                fadeout = None
+                fadeout_len = 0.0
+
+            full_duration = slide.view_duration/300 + transition_len + fadeout_len
+            bg = ffmpeg.input(f"color={shw.shwcolor_to_hex(slide.palette[0])}:r=60:s={viewport_size}", f="lavfi", t=full_duration)
             if slide.image_filename:
                 # TODO path management stuff?
                 # TODO some transition support other than fade
@@ -140,21 +168,18 @@ class SHWConverter:
                                  eval='init',
                                  remove_me=filter_id()
                                )
-                if fadeout:
-                    fadeout_overlay = ffmpeg.input(slide.image_filename, framerate=60, loop=1, t=fadeout_len)
-                    fadeout_overlay = fadeout_overlay.filter_("scale", s=viewport_size, force_original_aspect_ratio=aspect_handling[slide.resize_method])
-                    fadeout = fadeout.overlay(
-                                     fadeout_overlay,
-                                     x=alignment_handling[slide.alignment.x_value()].format("W", "w"),
-                                     y=alignment_handling[slide.alignment.y_value()].format("H", "h"),
-                                     eval='init',
-                                     remove_me=filter_id()
-                                   )
             elif slide.text:
-                for line in slide.text:
+                if not tmpdir:
+                    tmpdir = tempfile.TemporaryDirectory(delete=False)
+                for l, line in enumerate(slide.text):
+                    styled_text = SHWConverter.style_text(line.text, line.font_face, line.font_style)
                     # TODO fix text escaping - may need to switch from drawtext to subtitle/ass or use a temporary text file
+                    tmpfile = os.path.join(tmpdir.name, f"slide{idx}_line{l}.txt")
+                    with open(tmpfile, "w") as f:
+                        f.write(styled_text["text"])
                     bg = bg.drawtext(
-                                    **SHWConverter.style_text(line.text, line.font_face, line.font_style),
+                                    textfile=tmpfile,
+                                    fontfile=styled_text["fontfile"],
                                     expansion="none",
                                     fontcolor=shw.shwcolor_to_hex(line.color),
                                     fontsize=kbp2ass.AssConverter.rescale_scalar(line.font_size, *viewport_size, font=True, border=False),
@@ -164,37 +189,58 @@ class SHWConverter:
                                     boxw=viewport_size.width,
                                     y=kbp2ass.AssConverter.rescale_scalar(line.down, *viewport_size, border=False),
                                    )
-                    if fadeout:
-                        fadeout = fadeout.drawtext(
-                                        **SHWConverter.style_text(line.text, line.font_face, line.font_style),
-                                        expansion="none",
-                                        fontcolor=shw.shwcolor_to_hex(line.color),
-                                        fontsize=kbp2ass.AssConverter.rescale_scalar(line.font_size, *viewport_size, font=True, border=False),
-                                        text_align="T+"+line.alignment,
-                                        y_align="font",
-                                        x=kbp2ass.AssConverter.rescale_scalar(line.across, *viewport_size, border=False),
-                                        boxw=viewport_size.width,
-                                        y=kbp2ass.AssConverter.rescale_scalar(line.down, *viewport_size, border=False),
-                                       )
             if self.options.border:
                 border = ffmpeg.input(f"color={shw.shwcolor_to_hex(slide.palette[slide.border_color])}:r=60:s={output_size}",
                                       f="lavfi",
                                       t=full_duration,
                                      )
                 bg = border.overlay(bg, x=border_width, y=cdg_cursorheight, remove_me=filter_id())
-                if fadeout:
-                    fadeout_border = ffmpeg.input(f"color={shw.shwcolor_to_hex(slide.palette[slide.border_color])}:r=60:s={output_size}",
-                                          f="lavfi",
-                                          t=fadeout_len,
-                                         )
-                    fadeout = fadeout_border.overlay(fadeout, x=border_width, y=cdg_cursorheight, remove_me=filter_id())
-            # TODO switch to xfade which should simplify this whole thing a lot
-            bg = bg.filter_("fade", t="in", d=slide.transition_duration/300, alpha=1, remove_me=filter_id())
-            if prev:
-                bg = prev.overlay(bg, remove_me=filter_id())
-            video = video.concat(bg, remove_me=filter_id()) if video else bg
-        ffmpeg_options = ffmpeg.output(video, self.vidfile).get_args()
-        cleanup_args(ffmpeg_options, "remove_me")
-        print(f"cd {os.getcwd()}")
-        print("ffmpeg" + " " + " ".join(x if re.fullmatch(r"[\w\-/:\.]+", x) else f'"{x}"' for x in ffmpeg_options))
+            if video:
+                video = ffmpeg.filter_([video, bg],
+                                       "xfade",
+                                       transition=transitions.get(slide.transition_name, ["fade", "fade"])[int(slide.transition_reversed)],
+                                       duration=transition_len,
+                                       offset=offset,
+                                       remove_me=filter_id()
+                                      )
+            else:
+                video = bg
+            offset += full_duration - fadeout_len
+
+
+        if return_ffmpeg_object:
+            return {"ffmpeg_obj": video, "pre": lambda x: cleanup_args(x, "remove_me"), "post": lambda: tempdir.cleanup()}
+        else:
+            output_options = {}
+            if self.options.video_quality == 0:
+                if self.options.video_codec == "libvpx-vp9":
+                    output_options["lossless"]=1
+                elif self.options.video_codec in ("libx265", "libsvtav1"):
+                    output_options[f"{self.options.video_codec[3:]}-params"]="lossless=1"
+                elif self.options.video_codec != "png":
+                    output_options["crf"]=0
+            else:
+                output_options["crf"]=self.options.video_quality
+
+            if self.options.video_codec == "libvpx-vp9":
+                output_options["video_bitrate"] = 0 # Required for the format to use CRF only
+
+            if self.options.video_codec in ("libvpx-vp9", "libaom-av1"):
+                output_options["row-mt"] = 1 # Speeds up encode for most multicore systems
+
+            if self.options.media_container:
+                output_options["f"] = self.options.media_container
+
+            output_options.update({
+                "c:v": self.options.video_codec,
+                **self.options.output_options
+            })
+
+            ffmpeg_options = ffmpeg.output(video, self.vidfile, **output_options).overwrite_output().get_args()
+            cleanup_args(ffmpeg_options, "remove_me")
+            print(f"cd {os.getcwd()}")
+            print("ffmpeg" + " " + " ".join(x if re.fullmatch(r"[\w\-/:\.]+", x) else f'"{x}"' for x in ffmpeg_options))
+            subprocess.run(["ffmpeg"] + ffmpeg_options)
+            tmpdir.cleanup()
+
         os.chdir(oldcwd)
