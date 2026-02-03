@@ -157,7 +157,6 @@ class SHWConverter:
             bg = ffmpeg.input(f"color={shw.shwcolor_to_hex(slide.palette[0])}:r=60:s={viewport_size}", f="lavfi", t=full_duration)
             if slide.image_filename:
                 # TODO path management stuff?
-                # TODO some transition support other than fade
                 alignment = slide.crop_alignment if slide.resize_method == shw.ResizeMethod.CROP else slide.alignment
                 overlay = ffmpeg.input(slide.image_filename, framerate=60, loop=1, t=full_duration)
                 overlay = overlay.filter_("scale", s=viewport_size, force_original_aspect_ratio=aspect_handling[slide.resize_method])
@@ -173,7 +172,6 @@ class SHWConverter:
                     tmpdir = tempfile.TemporaryDirectory(delete=False)
                 for l, line in enumerate(slide.text):
                     styled_text = SHWConverter.style_text(line.text, line.font_face, line.font_style)
-                    # TODO fix text escaping - may need to switch from drawtext to subtitle/ass or use a temporary text file
                     tmpfile = os.path.join(tmpdir.name, f"slide{idx}_line{l}.txt")
                     with open(tmpfile, "w") as f:
                         f.write(styled_text["text"])
