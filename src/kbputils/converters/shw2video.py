@@ -29,6 +29,7 @@ class SHWBorderStyle(enum.Enum):
 @validators.validated_instantiation(replace="__init__")
 @dataclasses.dataclass
 class SHWConvertOptions:
+    preview: bool = dataclasses.field(default=False, metadata={"doc": "If set, do not run ffmpeg, only output the command that would be run"})
     target_x: int = dataclasses.field(default=1500, metadata={"doc": "Output video width"})
     target_y: int = dataclasses.field(default=1080, metadata={"doc": "Output video height"})
     border: SHWBorderStyle = dataclasses.field(default=SHWBorderStyle.CDG, metadata={"doc": "Type of border to apply to the video"})
@@ -120,6 +121,7 @@ class SHWConverter:
             video = ffmpeg.input(f"color={bgcolor}:s={size}:r=60", f="lavfi")
             # else unlikely to find any of the shw files, but we'll try anyway...
             candidates = {}
+            length = 0
             for idx, img in enumerate(self.kbpfile.images):
                 cdg_file = abspath(img.filename)
                 shw_file = cdg_file.parent.joinpath(cdg_file.stem + ".shw")
@@ -135,7 +137,7 @@ class SHWConverter:
                         shw_file = candidates[cdg_file.name]
                     else:
                         raise FileNotFoundError(shw_file)
-                overlay, tmpdir = self._convert(shw.SHWFile(shw_file))
+                overlay, tmpdir, length = self._convert(shw.SHWFile(shw_file))
                 tmpdirs.append(tmpdir)
                 if img.start > 1:
                     overlay = ffmpeg_color(color="000000@0", r=60, s="1920x1080", d=img.start/100.0).filter_("format", "rgba").concat(overlay)
@@ -150,8 +152,9 @@ class SHWConverter:
                     overlay = overlay.concat(ffmpeg_color(color="000000@0", r=60, s="1920x1080", d="20ms").filter_("format", "rgba"))
                 video = video.overlay(overlay, eof_action = eof_action)
             os.chdir(oldcwd)
+            duration = length + self.kbpfile.images[-1].start/100.0
         else:
-            video, tmpdir = self._convert()
+            video, tmpdir, duration = self._convert()
             tmpdirs.append(tmpdir)
 
         output_options = {}
@@ -181,12 +184,16 @@ class SHWConverter:
 
         ffmpeg_options = ffmpeg.output(video, self.vidfile, **output_options).overwrite_output().get_args()
         cleanup_args(ffmpeg_options, "remove_me")
-        print(f"cd {os.getcwd()}")
         print("ffmpeg" + " " + " ".join(x if re.fullmatch(r"[\w\-/:\.]+", x) else f'"{x}"' for x in ffmpeg_options))
-        subprocess.run(["ffmpeg"] + ffmpeg_options)
-        for tmpdir in tmpdirs:
-            if tmpdir:
-                tmpdir.cleanup()
+        def cleanup():
+            for tmpdir in tmpdirs:
+                if tmpdir:
+                    tmpdir.cleanup()
+        if self.options.preview:
+            return {"args": ["ffmpeg"] + ffmpeg_options, "cleanup": cleanup, "length": int(duration*1000)}
+        else:
+            subprocess.run(["ffmpeg"] + ffmpeg_options)
+            cleanup()
 
     def _convert(self, shwfile: shw.SHWFile | None = None) -> tuple:
         if not shwfile:
@@ -296,4 +303,4 @@ class SHWConverter:
 
         os.chdir(oldcwd)
 
-        return (video, tmpdir)
+        return (video, tmpdir, offset)
