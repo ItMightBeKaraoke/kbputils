@@ -126,8 +126,9 @@ class SHWConverter:
                 cdg_file = abspath(img.filename)
                 shw_file = cdg_file.parent.joinpath(cdg_file.stem + ".shw")
                 if not shw_file.exists():
+                    print(f"{shw_file} does not exist. Attempting to find shw file that generated {cdg_file.name} in {os.getcwd}")
                     if not candidates:
-                        for x in pathlib.Path.glob("**/*.shw", case_sensitive=False):
+                        for x in pathlib.Path(".").glob("**/*.shw", case_sensitive=False):
                             try:
                                 s = shw.SHWFile(x)
                                 candidates[pathlib.PureWindowsPath(s.cdg_filename).name] = x
@@ -256,7 +257,7 @@ class SHWConverter:
                 # TODO path management stuff?
                 alignment = slide.crop_alignment if slide.resize_method == shw.ResizeMethod.CROP else slide.alignment
                 overlay = ffmpeg.input(str(abspath(slide.image_filename)), framerate=60, loop=1, t=full_duration)
-                overlay = overlay.filter_("scale", s=viewport_size, force_original_aspect_ratio=aspect_handling[slide.resize_method])
+                overlay = overlay.filter_("scale", s=viewport_size, force_original_aspect_ratio=aspect_handling[slide.resize_method], remove_me=filter_id())
                 bg = bg.overlay(
                                  overlay,
                                  x=alignment_handling[slide.alignment.x_value()].format("W", "w"),
