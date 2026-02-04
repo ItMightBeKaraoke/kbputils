@@ -7,6 +7,7 @@ import enum
 import tempfile
 import subprocess
 import pathlib
+import traceback
 from .. import shw
 from . import kbp2ass # TODO maybe some of the static helper methods need to move out of here
 from .. import kbp
@@ -126,14 +127,15 @@ class SHWConverter:
                 cdg_file = abspath(img.filename)
                 shw_file = cdg_file.parent.joinpath(cdg_file.stem + ".shw")
                 if not shw_file.exists():
-                    print(f"{shw_file} does not exist. Attempting to find shw file that generated {cdg_file.name} in {os.getcwd}")
+                    print(f"{shw_file} does not exist. Attempting to find shw file that generated {cdg_file.name} in {os.getcwd()}")
                     if not candidates:
                         for x in pathlib.Path(".").glob("**/*.shw", case_sensitive=False):
                             try:
-                                s = shw.SHWFile(x)
-                                candidates[pathlib.PureWindowsPath(s.cdg_filename).name] = x
+                                s = shw.SHWFile(str(x))
+                                candidates[pathlib.PureWindowsPath(s.settings.cdg_filename).name] = x
                             except:
-                                pass
+                                print(f"Failed candidate {x}: {traceback.format_exc()}")
+                    print(f"SHW Candidates: {candidates}")
                     if cdg_file.name in candidates:
                         shw_file = candidates[cdg_file.name]
                     else:
