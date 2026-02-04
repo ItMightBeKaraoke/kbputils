@@ -53,6 +53,7 @@ class VideoOptions:
     intro_sound: bool = dataclasses.field(default=False, metadata={"doc": "Preserve audio in the intro (if video). Note that when using without the intro_concat option, this will mix without normalization, and may cause clipping"})
     outro_sound: bool = dataclasses.field(default=False, metadata={"doc": "Preserve audio in the outro (if video). Note that when using without the outro_concat option, this will mix without normalization, and may cause clipping"})
     output_options: dict = dataclasses.field(default_factory=lambda: {"pix_fmt": "yuv420p"}, metadata={"doc": "Additional parameters to pass to ffmpeg"})
+    disable_bginfo: bool = dataclasses.field(default=False, metadata={"doc": "Assume the background media is a video with the dimensions equal to target_x/target_y. Only use this when generating the ffmpeg command before the media file exists."})
 
     @validators.validated_types
     @staticmethod
@@ -128,7 +129,7 @@ class VideoConverter:
         base_assfile = os.path.basename(self.assfile)
         use_alpha = False
 
-        if self.options.background_media:
+        if self.options.background_media and not self.options.disable_bginfo:
             # TODO: handle exception
             bginfo = ffmpeg.probe(self.options.background_media)
             visual_stream = next(x for x in bginfo['streams'] if x['codec_type'] == 'video')
@@ -154,6 +155,16 @@ class VideoConverter:
                         song_length_ms = bgv_length_ms
             else: # MediaType.IMAGE
                 background_video = ffmpeg.input(self.options.background_media, loop=1, framerate=60, t=song_length_str)
+        # Information not known about the background video
+        elif self.options.background_media:
+            background_type = MediaType.VIDEO
+            bg_size = Dimension(self.options.target_x, self.options.target_y)
+            if self.options.loop_background_video:
+                background_video = ffmpeg.input(self.options.background_media, stream_loop=-1, t=song_length_str).video
+            else:
+                # Since video length is unknown, create a background of known length to overlay
+                background_video = ffmpeg.input(f"color=000000:r=60:s={bg_size}", f="lavfi", t=f"{song_length_ms}ms")
+                background_video = background_video.overlay(ffmpeg.input(self.options.background_media).video, eof_action="repeat")
         else:
             background_type = MediaType.COLOR
             bg_size = Dimension(self.options.target_x, self.options.target_y)

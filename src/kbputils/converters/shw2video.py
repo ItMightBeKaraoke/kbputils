@@ -140,7 +140,7 @@ class SHWConverter:
                 overlay, tmpdir, length = self._convert(shw.SHWFile(shw_file))
                 tmpdirs.append(tmpdir)
                 if img.start > 1:
-                    overlay = ffmpeg_color(color="000000@0", r=60, s="1920x1080", d=img.start/100.0).filter_("format", "rgba").concat(overlay)
+                    overlay = ffmpeg_color(color="000000@0", r=60, s=f"{size}", d=img.start/100.0).filter_("format", "rgba").concat(overlay)
                 if idx == len(self.kbpfile.images) - 1:
                     eof_action = "endall"
                 elif img.leaveonscreen:
@@ -149,7 +149,7 @@ class SHWConverter:
                     eof_action = "pass"
                 # Add a couple frames of background if the slide isn't supposed to be left on screen, so the last frame can still be repeated
                 if idx == len(self.kbpfile.images) - 1 and not img.leaveonscreen:
-                    overlay = overlay.concat(ffmpeg_color(color="000000@0", r=60, s="1920x1080", d="20ms").filter_("format", "rgba"))
+                    overlay = overlay.concat(ffmpeg_color(color="000000@0", r=60, s=f"{size}", d="20ms").filter_("format", "rgba"))
                 video = video.overlay(overlay, eof_action = eof_action)
             os.chdir(oldcwd)
             duration = length + self.kbpfile.images[-1].start/100.0
@@ -235,7 +235,7 @@ class SHWConverter:
         transition_durations = {
                                  "Fade": None, # Use specified transition duration
                                  "Clear Screen": 0.1,
-                                 "default": 2.0,
+                                 "default": 1.0,
                                }
 
         offset = 0
@@ -249,7 +249,8 @@ class SHWConverter:
             else:
                 fadeout_len = 0.0
 
-            full_duration = slide.view_duration/300 + transition_len + fadeout_len
+            # First slide has timing information for some reason though it's not used by KBS and not adjustable in the UI
+            full_duration = slide.view_duration/300 + transition_len + fadeout_len if idx > 0 else fadeout_len
             bg = ffmpeg.input(f"color={shw.shwcolor_to_hex(slide.palette[0])}:r=60:s={viewport_size}", f="lavfi", t=full_duration)
             if slide.image_filename:
                 # TODO path management stuff?
