@@ -264,7 +264,7 @@ class SHWConverter:
                                  eval='init',
                                  remove_me=filter_id()
                                )
-            elif slide.text:
+            if slide.text:
                 if not tmpdir:
                     tmpdir = tempfile.TemporaryDirectory(delete=False)
                 for l, line in enumerate(slide.text):
