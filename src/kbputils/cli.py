@@ -140,6 +140,8 @@ def convert_file():
                 additional_params["type"] = new_file
             elif field.type == int | bool:
                 additional_params["type"] = int_or_bool 
+            elif field.type == str | bool:
+                additional_params["type"] = str_or_bool
             elif field.type == str | None:
                 # TODO: more general
                 additional_params["type"] = str
@@ -212,15 +214,18 @@ def gen_shortopt(command, longopt):
             used_shortopts[command].add(char)
             return f"-{char}"
 
-# Coerce a string value into a bool or int
-# Accept true|false (case-insensitive), otherwise try int
-def int_or_bool(strVal):
+# Coerce a string value into a bool or another type
+# Accept true|false (case-insensitive), otherwise try the type constructor
+def bool_or_coerce(strVal, klass):
     if strVal.upper() == 'FALSE':
         return False
     elif strVal.upper() == 'TRUE':
         return True
     else:
-        return int(strVal)
+        return klass(strVal)
+
+int_or_bool = lambda s: bool_or_coerce(s, int)
+str_or_bool = lambda s: bool_or_coerce(s, str)
 
 def json_dict(strVal):
     res = json.loads(strVal)

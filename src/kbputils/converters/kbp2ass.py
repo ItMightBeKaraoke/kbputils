@@ -10,6 +10,7 @@ from .. import kbp
 from .. import validators
 from .. import kbs
 from .. import kbpfont
+from ..utils import abspath
 
 __all__ = ['AssAlignment', 'AssPosition', 'AssOverflow', 'AssOptions', 'AssConverter']
 
@@ -73,6 +74,9 @@ class AssOptions:
     overflow: AssOverflow = dataclasses.field(default=AssOverflow.EVEN_SPLIT, metadata={"doc": "How to handle lines wider than the screen"})
     allow_kt: bool = dataclasses.field(default=False, metadata={"doc": "Use \\kt if there are overlapping wipes on the same line (not supported by all ass implementations)"})
     experimental_spacing: bool = dataclasses.field(default=False, metadata={"doc": 'Calculate the "style 1" spacing instead of using Arial 12 bold default (only works for select fonts)'})
+    background_metadata: str | bool = dataclasses.field(default=True, metadata={"doc": "Add comment to .ass file noting the background for the project. Set to true to pull the background color from the .kbp file, use a string to set a filename (image or video) or color (use color: prefix and RGB or ARGB value), or set to false to disable the comment. ass2video.VideoConverter will then use this value if no alternate is provided."})
+    audio_metadata: str | bool = dataclasses.field(default=True, metadata={"doc": "Add comment to .ass file noting the audio file for the project. Set to true to pull the audio file from the .kbp file, use a string to set a filename, or set to false to disable the comment. ass2video.VideoConverter will then use this value if no alternate is provided."})
+
     #overflow_spacing: float # TODO? spacing value in styles that will apply for overflow (default 0). Multiplied by font height or based on default style?
 
     @staticmethod
@@ -285,6 +289,16 @@ class AssConverter:
             PlayResX=self.options.target_x,
             PlayResY=self.options.target_y,
             ) 
+
+        if (bg := self.options.background_metadata) is True:
+            bg = f"color: #{self.kbpFile.colors.as_rgb24()[0]}"
+        if bg:
+            result.info.add_comment(f" kbputils_background_1.0 {bg}")
+        if (aud := self.options.audio_metadata) is True:
+            kbp_audio = self.kbpFile.trackinfo['Audio']
+            aud = abspath(kbp_audio, getattr(self.kbpFile, "filename", None)) if kbp_audio else False
+        if aud:
+            result.info.add_comment(f" kbputils_audio_1.0 {aud}")
 
         if self.options.offset is False:
             self.options.offset = 0

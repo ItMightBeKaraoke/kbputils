@@ -6,6 +6,8 @@ import os
 import re
 import subprocess
 import types
+import functools
+import sys
 from .._ffmpegcolor import ffmpeg_color
 from .. import validators
 
@@ -29,7 +31,7 @@ class VideoOptions:
     aspect_ratio: Ratio = dataclasses.field(default=Ratio(300,216), metadata={"doc": "Aspect ratio of rendered subtitle. This will be letterboxed if not equal to the aspect ratio of the output video"})
     target_x: int = dataclasses.field(default=1500, metadata={"doc": "Output video width"})
     target_y: int = dataclasses.field(default=1080, metadata={"doc": "Output video height"})
-    background_color: str = dataclasses.field(default="#000000", metadata={"doc": "Background color for the video, as 24-bit RGB hex value, or 32-bit ARGB, optionally prefixed with '#'"})
+    background_color: str | None = dataclasses.field(default=None, metadata={"doc": "Background color for the video, as 24-bit RGB hex value, or 32-bit ARGB, optionally prefixed with '#'. If color and media are unspecified, the file will be checked for a metadata comment created by kbputils. If that's not present, it will default to black."})
     background_media: str | None = dataclasses.field(default=None, metadata={"doc": "Path to image or video to play in the background of the video"})
     loop_background_video: bool = dataclasses.field(default=False, metadata={"doc": "If using a background video, leaving this unset will play the background video exactly once, repeating the last frame if shorter than the audio, or continuing past the end of the audio if longer. If set, the background video will instead loop exactly as many times needed (including fractionally) to match the audio."})
     media_container: str | None = dataclasses.field(default=None, metadata={"doc": "Container file type to use for video output. If unspecified, will allow ffmpeg to infer from provided output filename"})
@@ -95,6 +97,8 @@ class VideoConverter:
         for x in ['audio_file', 'intro_media', 'outro_media', 'background_media']:
             if (val := getattr(self.options, x)):
                 setattr(self.options, x, os.path.abspath(val))
+        if not self.options.audio_file or self.options.background_color is self.options.background_media is None:
+            self.process_comments()
 
     def __getattr__(self, attr):
         return getattr(self.options, attr)
@@ -125,6 +129,32 @@ class VideoConverter:
                 result |= MediaType.VIDEO
         return result
 
+    # The ass document is usually just fed to ffmpeg and only needed from
+    # python in certain circumstances, so load it lazily
+    @functools.cached_property
+    def ass_doc(self):
+        import ass
+        with open(self.assfile, "r", encoding="utf_8_sig") as f:
+            return ass.parse_file(f)
+
+    def process_comments(self):
+        for comment in self.ass_doc.info.comments:
+            parts = comment.strip().split(maxsplit=1)
+            if len(parts) != 2:
+                continue
+            if parts[0] == "kbputils_background_1.0" and self.options.background_color is self.options.background_media is None:
+                if parts[1].startswith("color:"):
+                    self.options.background_color = parts[1][6:].strip()
+                    print(f"Found background color '{self.options.background_color}' in .ass file", file=sys.stderr)
+                else:
+                    self.options.background_media = parts[1].strip()
+                    print(f"Found background media '{self.options.background_media}' in .ass file", file=sys.stderr)
+            if parts[0] == "kbputils_audio_1.0" and not self.options.audio_file:
+                self.options.audio_file = parts[1].strip()
+                print(f"Found audio '{self.options.audio_file}' in .ass file", file=sys.stderr)
+        if self.options.background_color is self.options.background_media is None:
+            self.options.background_color = "#000000"
+
     def run(self):
         # TODO: handle exception
         if self.options.audio_file:
@@ -132,9 +162,7 @@ class VideoConverter:
         else:
             # If there's no audio file provided, just take the largest timestamp from the subtitle and add a few seconds
             # Yes the 3 seconds is hardcoded, but who's making a karaoke video without the audio anyway?!
-            import ass
-            with open(self.assfile, "r", encoding="utf_8_sig") as f:
-                song_length_str = str(max(x.end for x in ass.parse_file(f).events).total_seconds() + 3)
+            song_length_str = str(max(x.end for x in self.ass_doc.events).total_seconds() + 3)
             print("No audio file provided, estimating length from .ass file")
         song_length_ms = int(float(song_length_str) * 1000)
         output_options = {}
