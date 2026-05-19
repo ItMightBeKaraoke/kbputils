@@ -57,9 +57,9 @@ class VideoOptions:
 
     @validators.validated_types
     @staticmethod
-    def __assert_valid(key: str, value):                                                                                                          
+    def __assert_valid(key: str, value):
         return validators.validate_and_coerce_values(VideoOptions._fields, key, value)
-    
+
     @validators.validated_structures(assert_function=__assert_valid)
     def update(self, **options):
         for opt in options:
@@ -111,7 +111,7 @@ class VideoConverter:
         if not isinstance(file, dict):
             file = ffmpeg.probe(file)
         if any(x['codec_type']=='audio' for x in file['streams']):
-            result |= MediaType.AUDIO 
+            result |= MediaType.AUDIO
         if any(x['codec_type']=='video' for x in file['streams']):
             # Is it really video or an image? Let's see...
             # Yes, this is ridiculous, but

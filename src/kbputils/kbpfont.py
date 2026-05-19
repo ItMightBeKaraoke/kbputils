@@ -1,5 +1,3 @@
-import sys
-
 # Probably not the final strategy, but start with some hardcoded spacing values
 font_info = {
     'Arial': {'regular': [16, 17, 18, 19, 22, 23, 24, 26, 27], 'bold': [16, 18, 19, 19, 22, 24, 24, 27, 29]},
@@ -21,7 +19,6 @@ font_info = {
 }
 
 # TODO: object with spacing property
-#def spacing(font, size, bold=False):
 def spacing(style):
     font = style.fontname
     size = style.fontsize

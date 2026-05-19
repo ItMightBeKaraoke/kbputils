@@ -6,7 +6,6 @@ from . import misc
 from . import __version__
 import argparse
 import dataclasses
-import io
 import os
 import sys
 import collections
@@ -139,7 +138,7 @@ def convert_file():
             elif field.metadata.get('new_file'):
                 additional_params["type"] = new_file
             elif field.type == int | bool:
-                additional_params["type"] = int_or_bool 
+                additional_params["type"] = int_or_bool
             elif field.type == str | bool:
                 additional_params["type"] = str_or_bool
             elif field.type == str | None:

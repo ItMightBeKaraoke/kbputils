@@ -93,6 +93,6 @@ def kbpcheck(source, args, dest):
                     print("Sorry, try another filename")
                     continue
                 sys.exit(0)
-                
+
     dest.close()
     sys.exit(min(len(errs) + len(source.onload_modifications), 255))

@@ -292,14 +292,14 @@ class KBPAction(typing.NamedTuple):
                             for syllable_no, syllable in self._param_enumerate('syllables', line.syllables):
                                 # handle both start/end of syllables
                                 updates = {
-                                        (anchor_name := anchor.name.lower()): 
+                                        (anchor_name := anchor.name.lower()):
                                         getattr(syllable, anchor_name) + self.params['value']
                                         for anchor in self.params['anchor']
                                 }
                                 line.syllables[syllable_no] = syllable._replace(**updates)
                         if KBPTimingTarget.Line in self.params['target']:
                             updates = {
-                                    (anchor_name := anchor.name.lower()): 
+                                    (anchor_name := anchor.name.lower()):
                                     getattr(line, anchor_name) + self.params['value']
                                     for anchor in self.params['anchor']
                             }
@@ -444,7 +444,7 @@ class KBPFile:
                 # Ignore empty/comment lines and still consider the previous line to be a divider
                 if line != KBPFile.DIVIDER and line != "" and not line.startswith("'"):
                     divider = False
-                 
+
                 x += cursor[1].stop
 
             except Exception as e:
@@ -470,7 +470,7 @@ class KBPFile:
         if missing:
             raise ValueError(f"Invalid KBP file, missing sections: {missing}")
 
-        if not hasattr(self, 'trackinfo') and template == False: # ignore when None
+        if not hasattr(self, 'trackinfo') and template is False: # ignore when None
             raise ValueError("Invalid KBP file, missing track info. If this was intended to be used as a template, set template to True or None")
 
     def resolve_wipes(self) -> None:
@@ -510,7 +510,7 @@ class KBPFile:
                 self.trackinfo[fields[0]] = fields[1]
                 prev = fields[0]
 
-    
+
 
     # Convenience method to get all the lyric text without timing info,
     # potentially with syllable marks added. To get lyric text that could be used
@@ -583,8 +583,8 @@ class KBPFile:
     def logicallyValidate(self) -> typing.List[KBPErrorDetails]:
         result = []
         for p, page in enumerate(self.pages):
-            for l, line in enumerate(page.lines):
-                result.extend(line.logicallyValidate(p, l, self.styles))
+            for line_no, line in enumerate(page.lines):
+                result.extend(line.logicallyValidate(p, line_no, self.styles))
         return result
 
 
@@ -596,7 +596,7 @@ class KBPFile:
 class KBPPalette(collections.namedtuple("KBPPalette", tuple(range(16)), rename=True)):
 
     __annotations__ = dict((f"_{x}",str) for x in range(16))
-    
+
     # namedtuple-generated classes don't have __init__ so must instead override __new__
     def __new__(cls, *colors):
         assert len(colors) == 16 and all(re.match(r"[0-9A-F]{3}$", x) for x in colors), "Palette must have 16 12-bit RGB values."
@@ -664,12 +664,12 @@ class KBPStyle(typing.NamedTuple):
         elif all(isinstance(getattr(self,x), int) for x in fields):
             return False
         else:
-            raise TypeError("Mixed/unexpected types found in color parameters:\n\t" + 
+            raise TypeError("Mixed/unexpected types found in color parameters:\n\t" +
                 "\n\t".join([": ".join((x, str(getattr(self,x)))) for x in fields]))
 
     def resolve_colors(style, palette):
         if style.has_colors():
-            warnings.warn(f"Colors were already resolved on style {name}. Palette may not be used as intended", RuntimeWarning)
+            warnings.warn(f"Colors were already resolved on style {style.name}. Palette may not be used as intended", RuntimeWarning)
             return style
         else:
             fields = ("textcolor", "outlinecolor", "textwipecolor", "outlinewipecolor")
@@ -743,7 +743,7 @@ class KBPStyleCollection(dict):
         # The caller can determine this happened if needed by
         # comparing style.style_no with the requested index
         # A converter can choose on its side whether it wants
-        # the undefined style to be considered a new one or 
+        # the undefined style to be considered a new one or
         # reuse the name of the default
         elif isinstance(key, int) and (1 <= abs(key) <= 26):
             return self[1] if key > 0 else self[-1]
@@ -769,11 +769,11 @@ class KBPStyleCollection(dict):
     def __init__(self, *args, **kwargs):
         arg = args[0] if args else []
         super().__init__(arg, **kwargs)
-    
+
     def __setitem__(self, key, value):
         KBPStyleCollection.__assert_valid_item(key, value)
         super().__setitem__(key, value)
-    
+
     @validators.validated_structures(__assert_valid_item)
     @validators.one_arg
     def update(self, *args, **kwargs):
@@ -791,7 +791,7 @@ class KBPStyleCollection(dict):
     @staticmethod
     def fromkeys(keys, value=None):
         # Data validated by __init__
-         return KBPStyleCollection(dict.fromkeys(keys, value))
+        return KBPStyleCollection(dict.fromkeys(keys, value))
 
     # Set available styles based on the configuration
     @staticmethod
@@ -843,8 +843,7 @@ class KBPStyleCollection(dict):
                 else:
                     raise KBPStyleParseError(f"Unable to parse style {style_no}", range = slice(n-2,n+1)) from e
         return styles
-    
-    
+
     def key2alpha(key: int):
         if key < 0:
             return string.ascii_lowercase[-key-1]
@@ -887,7 +886,7 @@ class KBPStyleCollection(dict):
 
     def toKBP(self):
         return KBPStyleCollection.HEADER + "".join(x.toKBP() for x in self.values() if x.style_no > 0) + "  StyleEnd\n\n"
-        
+
 @validators.validated_instantiation
 class KBPPlaybackSettings(typing.NamedTuple):
     pitch_enabled: bool = False
@@ -968,7 +967,7 @@ def _kbpline_fix_replace(cls):
         return KBPLine(**final_kwargs)
     cls._replace = kbpline_replace
     return cls
-    
+
 @_kbpline_fix_replace
 @validators.validated_instantiation
 class KBPLine(typing.NamedTuple):

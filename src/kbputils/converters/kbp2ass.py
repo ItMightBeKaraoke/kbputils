@@ -93,7 +93,7 @@ class AssOptions:
 AssOptions._fields = types.MappingProxyType(dict((f.name,f) for f in dataclasses.fields(AssOptions)))
 
 class AssConverter:
-    
+
     @validators.validated_types
     def __init__(self, kbpFile: kbp.KBPFile, options: AssOptions = None, **kwargs):
         self.kbpFile = kbpFile
@@ -183,7 +183,7 @@ class AssConverter:
         right, _ = AssConverter.rescale_coords(right, pos.y, self.target_x, self.target_y, border=self.border, allow_float=self.float_pos)
 
         return (left, right)
-    
+
     # Determine the most-used line alignment for each style to minimize \anX tags in result
     # (since alignment is not part of the KBP style, but is part of the ASS style)
     def _calc_style_alignments(self):
@@ -256,7 +256,7 @@ class AssConverter:
 
             # Using == False explicitly because it's technically a tri-state with None meaning undefined
             # Though that scenario shouldn't come up since we are allowing KBPFile to resolve wipedetail
-            wipe = r"\k" if s.isprogressive() == False else r"\kf"
+            wipe = r"\k" if s.isprogressive() is False else r"\kf"
 
             result += r"{%s%d}%s" % (wipe, dur, self.kbpsyl2ass(s.syllable, n==0))
             cur += dur
@@ -288,7 +288,7 @@ class AssConverter:
             Collisions="Normal",
             PlayResX=self.options.target_x,
             PlayResY=self.options.target_y,
-            ) 
+            )
 
         if (bg := self.options.background_metadata) is True:
             bg = f"color: #{self.kbpFile.colors.as_rgb24()[0]}"
@@ -347,5 +347,5 @@ class AssConverter:
                 encoding = style.charset,
                 alignment=AssAlignment[self.style_alignments.get(kbp.KBPStyleCollection.key2alpha(idx), 'C')].value,
                 ))
-            
+
         return result
