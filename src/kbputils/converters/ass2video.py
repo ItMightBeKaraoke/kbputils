@@ -133,7 +133,7 @@ class VideoConverter:
             # If there's no audio file provided, just take the largest timestamp from the subtitle and add a few seconds
             # Yes the 3 seconds is hardcoded, but who's making a karaoke video without the audio anyway?!
             import ass
-            with open(self.assfile) as f:
+            with open(self.assfile, "r", encoding="utf_8_sig") as f:
                 song_length_str = str(max(x.end for x in ass.parse_file(f).events).total_seconds() + 3)
             print("No audio file provided, estimating length from .ass file")
         song_length_ms = int(float(song_length_str) * 1000)
