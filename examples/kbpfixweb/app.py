@@ -4,6 +4,7 @@ import io
 import kbputils
 import tempfile
 import os
+import traceback
 
 app = flask.Flask(__name__)
 
@@ -90,8 +91,25 @@ kbpcheck_result = """
 </form>
 {% else %}
 <p>No errors detected. Have a nice day!</p>
-<p><a href="/">Process more files</p>
+<p><a href="/">Process more files</a></p>
 {% endif %}
+{{foot}}
+</body>
+"""
+
+kbpcheck_failure = """
+<!doctype html>
+<head><title>KBP fix tool</title></head>
+<body>
+<h1>KBP Fixer</h1>
+
+<strong style="color: red">Failed to process .kbp file at all.</strong> This means there are probably serious problems. See detailed exception info below:
+
+<pre>
+{{exception}}
+</pre>
+
+<p><a href="/">Process more files</a></p>
 {{foot}}
 </body>
 """
@@ -116,7 +134,12 @@ def process():
     flask.session['kbpfilename'] = flask.request.files['file'].filename
     flask.request.files['file'].save(fp)
     fp.close()
-    kbp = kbputils.kbp.KBPFile(fname, tolerant_parsing=True, resolve_wipe=False)
+    try:
+        kbp = kbputils.kbp.KBPFile(fname, tolerant_parsing=True, resolve_wipe=False)
+    except Exception:
+        os.remove(fname)
+        return flask.render_template_string(kbpcheck_failure, exception=traceback.format_exc(), foot=markupsafe.Markup(foot))
+
     syntax_errors = kbp.onload_modifications
     logic_errors = []
     sln_no = 0
