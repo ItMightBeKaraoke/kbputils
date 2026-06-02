@@ -1107,8 +1107,17 @@ class KBPPage(typing.NamedTuple):
                     continue
                 elif header is None and x.startswith("FX/"):
                     transitions = x.split('/')[1:]
-                elif header is not None and x != "":
+                elif x != "" and (header is not None or (tolerant and lines and not lines[-1].syllables)):
                     fields = x.split("/")
+
+                    # Sometimes kbp corruption introduces additional newline characters immediately after a header
+                    # E.g.
+                    # C/A/13971/14442/0/0/0
+                    #                                   <- This empty line shouldn't be here
+                    # E/            14198/14225/0
+                    if header is None: # Implies tolerant and line with no syllables from the or condition above
+                        parent.onload_modifications.append(f"Extraneous newlines on page {len(parent.pages)+1}, line {len(lines)}")
+                        header = lines.pop().header # Remove erroneous empty line and take its header for use in discovered syllables
 
                     # Sometimes kbp files are corrupt in such a way that a syllable line split into two
                     # This combines them back together into a valid line
@@ -1125,6 +1134,7 @@ class KBPPage(typing.NamedTuple):
                     #    /         123/456/0
                     # So this should be handled as well
                     if tolerant:
+
                         partial_syllable.extend(fields if fields[0] or not partial_syllable else fields[1:])
                         if len(partial_syllable) < 4:
                             if parent:
@@ -1148,7 +1158,9 @@ class KBPPage(typing.NamedTuple):
                         fields[3] = default_wipe
                     syllables.append(KBPSyllable(**dict(zip(("syllable", "start", "end", "wipe"), fields))))
                 else:
-                    raise ValueError(f"Unexpected line{' (expected header here)' if header is None else ''}")
+                    suggestion = " (expected header here)." if header is None else ""
+                    suggestion += " Try the tolerant_parsing option?" if suggestion and lines and not lines[-1].syllables else ""
+                    raise ValueError(f"Unexpected line{suggestion}")
             except Exception as e:
                 raise KBPPageParseError("Failed to parse page", line = n) from e
         return KBPPage(*transitions, lines)
