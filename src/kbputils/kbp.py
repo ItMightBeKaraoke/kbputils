@@ -1107,17 +1107,19 @@ class KBPPage(typing.NamedTuple):
                     continue
                 elif header is None and x.startswith("FX/"):
                     transitions = x.split('/')[1:]
-                elif x != "" and (header is not None or (tolerant and lines and not lines[-1].syllables)):
+                elif x != "" and (header is not None or (tolerant and lines)):
                     fields = x.split("/")
 
-                    # Sometimes kbp corruption introduces additional newline characters immediately after a header
+                    # Sometimes kbp corruption introduces additional newline characters
                     # E.g.
                     # C/A/13971/14442/0/0/0
                     #                                   <- This empty line shouldn't be here
                     # E/            14198/14225/0
-                    if header is None: # Implies tolerant and line with no syllables from the or condition above
+                    if header is None: # Implies tolerant
                         parent.onload_modifications.append(f"Extraneous newlines on page {len(parent.pages)+1}, line {len(lines)}")
-                        header = lines.pop().header # Remove erroneous empty line and take its header for use in discovered syllables
+                        last = lines.pop()
+                        header = last.header
+                        syllables = last.syllables
 
                     # Sometimes kbp files are corrupt in such a way that a syllable line split into two
                     # This combines them back together into a valid line
