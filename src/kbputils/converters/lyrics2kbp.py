@@ -87,7 +87,7 @@ class LyricsConverter:
                 right=0,
                 down=0,
                 rotation=0
-            ) 
+            )
             kbpline = kbp.KBPLine(line_header, [kbp.KBPSyllable(self.syl2kbp(syl), round(start/10), round(end/10), 0) for start, end, syl in line])
             kbplines.append(kbpline)
         return self.kbpfile

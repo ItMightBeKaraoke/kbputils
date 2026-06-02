@@ -134,6 +134,16 @@ Converter CLIs
       --experimental-spacing, --no-experimental-spacing, -a
                             Calculate the "style 1" spacing instead of using Arial 12 bold default (only works for select fonts)
                             (default: False)
+      --background-metadata, -m BACKGROUND_METADATA
+                            Add comment to .ass file noting the background for the project. Set to true to pull the background
+                            color from the .kbp file, use a string to set a filename (image or video) or color (use color: prefix
+                            and RGB or ARGB value), or set to false to disable the comment. ass2video.VideoConverter will then
+                            use this value if no alternate is provided. (default: True)
+      --audio-metadata, -e AUDIO_METADATA
+                            Add comment to .ass file noting the audio file for the project. Set to true to pull the audio file
+                            from the .kbp file, use a string to set a filename, or set to false to disable the comment.
+                            ass2video.VideoConverter will then use this value if no alternate is provided. (default: True)
+      
       --tolerant-parsing, --no-tolerant-parsing, -r
                             Automatically fix syntax errors in .kbp file if they have an unambiguous interpretation (default:
                             False)
@@ -175,9 +185,12 @@ Converter CLIs
       --target-y, -y TARGET_Y
                             Output video height (default: 1080)
       --background-color, -c BACKGROUND_COLOR
-                            Background color for the video, as 24-bit RGB hex value (default: #000000)
+                            Background color for the video, as 24-bit RGB hex value, or 32-bit ARGB, optionally prefixed with
+                            '#'. If color and media are unspecified, the file will be checked for a metadata comment created by
+                            kbputils. If that's not present, it will default to black. (default: None)
       --background-media, -m BACKGROUND_MEDIA
                             Path to image or video to play in the background of the video (default: None)
+
       --loop-background-video, --no-loop-background-video, -v
                             If using a background video, leaving this unset will play the background video exactly once,
                             repeating the last frame if shorter than the audio, or continuing past the end of the audio if

@@ -7,7 +7,7 @@ authors = [
 description = "Utilities to handle .kbp files created with Karaoke Builder Studio."
 readme = "README.md"
 dependencies = [
-    "ass",
+    "ass_imbk",
     "charset-normalizer"
 ]
 classifiers = [

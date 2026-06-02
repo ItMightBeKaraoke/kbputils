@@ -5,7 +5,7 @@ try:
     import ffmpeg
     del ffmpeg
     ffmpeg_available = True
-except:
+except ImportError:
     ffmpeg_available = False
 if ffmpeg_available:
     from .ass2video import *

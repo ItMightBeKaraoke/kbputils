@@ -19,7 +19,7 @@ def num_arg(maximum, *, minimum=0, keyword_allowed=True, static=False):
             positional_message = f"at most {maximum}"
         else:
             positional_message = f"between {minimum} and {maximum}"
-        keyword_message = "" if keyword_allowed else " and no keyword arguments" 
+        keyword_message = "" if keyword_allowed else " and no keyword arguments"
 
         @functools.wraps(func)
         def num_arg_wrapper(*args, **kwargs):
@@ -68,7 +68,7 @@ def validated_types(func=None, /, *, coerce_types=True):
                     # parameter not passed, nothing to validate
                     # function itself should validate number of parameters and
                     # whether they were option or mandatory
-                    continue 
+                    continue
                 if (t := signature.parameters[param].annotation) is not inspect._empty:
                     if coerce_types and not isinstance(comp, t) and callable(t):
                         # Give coercion a try...
@@ -97,7 +97,7 @@ def validate_and_coerce_values(fields: typing.Mapping, key: str, value):
             elif hasattr(t, '__args__') and callable(s := t.__args__[0]):
                 value = s(value)
         elif not isinstance(value, t):
-            raise TypeError(f"Expected {opt} to be of type {t}. Found {type(options[opt])}.")
+            raise TypeError(f"Expected {value} to be of type {t}. Found {type(value)}.")
     else:
         raise TypeError(f"Unexpected field '{key}'. Possible fields are {fields.keys()}.")
 
@@ -147,7 +147,7 @@ def validated_instantiation(cls=None, /, *, replace="__new__"):
             pos_idx = 0
             for param in (a := inspect.get_annotations(cls)):
                 comp = None
-                if(len(args) > pos_idx):
+                if len(args) > pos_idx:
                     comp = args[pos_idx]
                     pos_idx += 1
                 elif param in kwargs:
